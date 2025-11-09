@@ -63,7 +63,7 @@ async function sendSMS(to, message){
       // fall through to fallback
     }
   }
-  // fallback: push to admin notifications so admin can see unsent SMS
+  // fallback: push to admin notifications so owner can see unsent SMS in localStorage
   console.log('SMS disabled or endpoint missing — message to', to, message);
   pushAdminNotification({ type: 'sms-mock', title: `SMS to ${to}`, body: message, bookingId: null });
   return false;
@@ -80,12 +80,7 @@ function toIST(d){
 }
 function money(n){ return `₹${Number(n||0).toLocaleString('en-IN')}`; }
 
-// -------------------- Resource / capacity helpers (NEW) --------------------
-// Expectation in data/site.json:
-// - each court can include: resourceId (string), units (number)
-// - state.cfg.resourceCapacity is an object mapping resourceId -> capacity number
-// Example: state.cfg.resourceCapacity = { "main-pitch": 2 }
-
+// -------------------- Resource / capacity helpers --------------------
 function getCourtById(id){
   return (state.cfg?.courts || []).find(c => c.id === id);
 }
@@ -100,11 +95,10 @@ function getResourceIdByCourtId(id){
 function getResourceCapacity(resourceId){
   if(!state.cfg) return 1;
   if(state.cfg.resourceCapacity && typeof state.cfg.resourceCapacity[resourceId] === 'number') return state.cfg.resourceCapacity[resourceId];
-  // fallback: if not configured, default to 1 (behavior: block same court only)
   return 1;
 }
 
-// -------------------- Admin: confirmBooking --------------------
+// -------------------- confirmBooking (keeps functionality but NOT exposed globally) --------------------
 async function confirmBooking(bookingId, adminNote){
   const rows = loadAllBookings();
   const idx = rows.findIndex(b => b.id === bookingId);
@@ -126,21 +120,18 @@ Court: ${b.courtLabel || b.courtId}
 Collect payment at counter.`;
   await sendSMS(b.phone, userMsg);
 
-  // notify admin (confirmation)
+  // notify owner
   const adminMsg = `Booking CONFIRMED.
 ID: ${b.id}
 Customer: ${b.name}, ${b.phone}
-Confirmed by admin.`;
+Confirmed by manager.`;
   await sendSMS(state.cfg.phone, adminMsg);
   pushAdminNotification({ type: 'booking-confirmed', title: `Booking confirmed — ${b.id}`, body: adminMsg, bookingId: b.id });
 
-  // inform other clients / admin UI
+  // inform other clients / potential admin micro-app
   window.dispatchEvent(new CustomEvent('booking:confirmed', { detail: b }));
   return true;
 }
-
-// Expose to global (so inline admin.html scripts can call it)
-window.confirmBooking = confirmBooking;
 
 // -------------------- App boot & rendering --------------------
 let currentShownBookingId = null;
@@ -167,7 +158,7 @@ function renderHeader(){
   if(bizNameEl) bizNameEl.textContent = state.cfg.name;
   const addrEl = $("#addr");
   if(addrEl) addrEl.textContent = state.cfg.address;
-  const callLink = $("#callLink");
+  const callLink = $("#callLinkHeader");
   if(callLink) callLink.href = `tel:${state.cfg.phone}`;
   const wa = $("#waLink");
   if(wa) wa.href = `https://wa.me/${state.cfg.whatsapp}`;
@@ -233,8 +224,6 @@ function computePrice(court, start){
 }
 
 // -------------------- renderSlots (resource-aware) --------------------
-// This version uses resourceId / units / resourceCapacity to decide conflicts.
-// Backwards-compatible: if resourceId/units/capacity are missing, it falls back to blocking same courtId only.
 function renderSlots(){
   const dateInput = $("#date");
   if(!dateInput) return;
@@ -277,17 +266,31 @@ function renderSlots(){
     const disabled = (occupiedUnits + candidateUnits) > capacity;
     const price = computePrice(court, s.start);
 
-    const item = document.createElement("button");
-    item.className = "w-full flex items-center justify-between border rounded-xl p-3 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed";
-    item.disabled = disabled;
+    const item = document.createElement("div");
+    item.className = "w-full flex items-center justify-between border rounded-xl p-3 gap-3";
     const time = `${pad(s.start.getHours())}:${pad(s.start.getMinutes())}–${pad(s.end.getHours())}:${pad(s.end.getMinutes())}`;
-    item.innerHTML = `<span class="font-medium">${time}</span><span class="font-semibold">${money(price)}</span>`;
-    item.addEventListener("click", ()=> openBookingModal({court, dateISO, start:s.start, end:s.end, price}));
+    const left = document.createElement("div");
+    left.innerHTML = `<span class="font-medium">${time}</span><span class="ml-3 font-semibold">${money(price)}</span>`;
+    const right = document.createElement("div");
+    if(disabled){
+      const wl = document.createElement("button");
+      wl.className = "px-3 py-2 rounded-xl border text-gray-700 hover:bg-gray-50";
+      wl.textContent = "Join Waitlist";
+      linkJoinWaitlist(wl, s, court);
+      right.appendChild(wl);
+    } else {
+      const book = document.createElement("button");
+      book.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white";
+      book.textContent = "Book";
+      book.addEventListener("click", ()=> openBookingModal({court, dateISO, start:s.start, end:s.end, price}));
+      right.appendChild(book);
+    }
+    item.append(left, right);
     list.appendChild(item);
   });
 }
 
-// -------------------- openBookingModal & booking flow (kept largely same) --------------------
+// -------------------- openBookingModal & booking flow --------------------
 function openBookingModal({court, dateISO, start, end, price}){
   const modal = $("#modal");
   if(!modal) return;
@@ -333,7 +336,7 @@ function openBookingModal({court, dateISO, start, end, price}){
         phone,
         notes: $("#m-notes").value.trim(),
         createdAt: new Date().toISOString(),
-        status: "pending" // pending until admin confirms
+        status: "pending" // pending until manager confirms
       };
 
       saveBooking(booking);
@@ -349,7 +352,7 @@ Booking ID: ${booking.id}
 Status: Pending confirmation.`;
       sendSMS(booking.phone, userMsg);
 
-      // Notify admin (SMS + in-app)
+      // Notify owner (SMS + local)
       const adminMsg = `New booking PENDING.
 ID: ${booking.id}
 Court: ${booking.courtLabel}
@@ -423,8 +426,9 @@ function renderAmenities(){
   });
 }
 
+// NOTE: selector updated to match cleaned index.html
 function renderRules(){
-  const ul = $("#rules");
+  const ul = $("#rulesList");
   if(!ul) return;
   ul.innerHTML = "";
   (state.cfg.rules||[]).forEach(r=>{
@@ -470,12 +474,8 @@ function attachHandlers(){
   if(cm) cm.addEventListener("click", closeModal);
   const mc = $("#m-cancel");
   if(mc) mc.addEventListener("click", closeModal);
-  // Admin link: keyboard 'A' opens prompt
-  document.addEventListener("keydown", (e)=>{
-    if(e.key.toLowerCase()==='a' && (e.ctrlKey || e.metaKey)){
-      window.location.href = "./admin.html";
-    }
-  });
+
+  // removed admin keyboard shortcut and redirect to admin.html
 }
 
 window.addEventListener("load", init);
@@ -525,73 +525,6 @@ function linkJoinWaitlist(btn, slot, court){
     addWaitlist(dateISO, court.id, slot.start.toISOString(), name, phone);
   });
 }
-
-// Modify renderSlots to show Join Waitlist on disabled slots (resource-aware)
-const _renderSlots = renderSlots;
-renderSlots = function(){
-  const dateInput = $("#date");
-  if(!dateInput) return;
-  const dateISO = dateInput.value;
-  const court = state.cfg.courts.find(c=>c.id===state.courtId);
-  if(!court){
-    const listEl = $("#slotList");
-    if(listEl) listEl.innerHTML = `<p class="text-gray-500">Court configuration missing.</p>`;
-    return;
-  }
-
-  // bookings for the date (all courts)
-  const allBookingsForDate = loadBookings().filter(b => b.dateISO === dateISO);
-
-  const resourceId = court.resourceId || court.id;
-  const capacity = getResourceCapacity(resourceId);
-  const candidateUnits = (typeof court.units === 'number') ? court.units : 1;
-
-  const list = $("#slotList");
-  if(!list) return;
-  list.innerHTML = "";
-  const slots = genSlotsForDay(dateISO, court);
-  if(!slots.length){ list.innerHTML = `<p class="text-gray-500">No slots available for this day.</p>`; return; }
-
-  slots.forEach(s=>{
-    // compute occupied units for overlaps on the same resource
-    let occupiedUnits = 0;
-    allBookingsForDate.forEach(b=>{
-      const bStart = new Date(b.startISO);
-      const bEnd = new Date(b.endISO);
-      if(!isOverlap(s.start, s.end, bStart, bEnd)) return;
-      const bResource = getResourceIdByCourtId(b.courtId);
-      if(bResource !== resourceId) return;
-      occupiedUnits += getCourtUnitsById(b.courtId);
-    });
-
-    const disabled = (occupiedUnits + candidateUnits) > capacity;
-    const price = computePrice(court, s.start);
-
-    const item = document.createElement("div");
-    item.className = "w-full flex items-center justify-between border rounded-xl p-3 gap-3";
-    const time = `${pad(s.start.getHours())}:${pad(s.start.getMinutes())}–${pad(s.end.getHours())}:${pad(s.end.getMinutes())}`;
-    const left = document.createElement("div");
-    left.innerHTML = `<span class="font-medium">${time}</span><span class="ml-3 font-semibold">${money(price)}</span>`;
-    const right = document.createElement("div");
-    if(disabled){
-      const wl = document.createElement("button");
-      wl.className = "px-3 py-2 rounded-xl border text-gray-700 hover:bg-gray-50";
-      wl.textContent = "Join Waitlist";
-      linkJoinWaitlist(wl, s, court);
-      right.appendChild(wl);
-    } else {
-      const book = document.createElement("button");
-      book.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white";
-      book.textContent = "Book";
-      book.addEventListener("click", ()=> openBookingModal({court, dateISO, start:s.start, end:s.end, price}));
-      right.appendChild(book);
-    }
-    item.append(left, right);
-    list.appendChild(item);
-  });
-}
-
-// Keep openBookingModal behavior (already defined above) — no override needed
 
 // No online payments: keep launchRazorpay as noop to avoid accidental calls
 function launchRazorpay(){ console.warn('Payments disabled — launchRazorpay() is a noop'); }
