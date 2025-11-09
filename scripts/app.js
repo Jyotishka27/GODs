@@ -1,0 +1,389 @@
+
+// Lightweight booking UI using localStorage as a demo backend
+const $ = (sel, el=document) => el.querySelector(sel);
+const $$ = (sel, el=document) => [...el.querySelectorAll(sel)];
+const storeKey = "turf_bookings_v1";
+const siteCfgUrl = "./data/site.json";
+
+const state = {
+  cfg: null,
+  date: new Date(),
+  courtId: null,
+  phone: "",
+  cart: [],
+};
+
+function fmtDateISO(d){ return d.toISOString().split('T')[0]; }
+function pad(n){ return String(n).padStart(2,'0'); }
+function toIST(d){
+  // Adjust to Asia/Kolkata (UTC+5:30) for display consistency
+  const tzOffset = 5.5 * 60; // minutes
+  const utc = d.getTime() + (d.getTimezoneOffset()*60000);
+  return new Date(utc + tzOffset*60000);
+}
+function money(n){ return `₹${n.toLocaleString('en-IN')}`; }
+
+function loadBookings(){
+  try { return JSON.parse(localStorage.getItem(storeKey) || "[]"); }
+  catch(e){ return []; }
+}
+function saveBooking(booking){
+  const all = loadBookings();
+  all.push(booking);
+  localStorage.setItem(storeKey, JSON.stringify(all));
+  return booking.id;
+}
+function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
+
+async function init(){
+  const res = await fetch(siteCfgUrl);
+  state.cfg = await res.json();
+  // default court
+  state.courtId = state.cfg.courts[0].id;
+  renderHeader();
+  renderDatePicker();
+  renderCourtPicker();
+  renderAmenities();
+  renderRules();
+  renderMap();
+  renderGallery();
+  renderPolicies();
+  renderSlots();
+  attachHandlers();
+}
+
+function renderHeader(){
+  $("#bizName").textContent = state.cfg.name;
+  $("#addr").textContent = state.cfg.address;
+  $("#callLink").href = `tel:${state.cfg.phone}`;
+  $("#waLink").href = `https://wa.me/${state.cfg.whatsapp}`;
+  $("#emailLink").href = `mailto:${state.cfg.email}`;
+}
+
+function renderDatePicker(){
+  const d = toIST(new Date());
+  const min = fmtDateISO(d);
+  const input = $("#date");
+  input.value = min;
+  input.min = min;
+  input.addEventListener("change", renderSlots);
+}
+
+function renderCourtPicker(){
+  const wrap = $("#courtPicker");
+  wrap.innerHTML = "";
+  state.cfg.courts.forEach(c=>{
+    const btn = document.createElement("button");
+    btn.className = "px-4 py-2 rounded-xl border hover:bg-gray-50 transition";
+    btn.textContent = c.label;
+    btn.dataset.id = c.id;
+    if(c.id === state.courtId) btn.classList.add("ring-2","ring-emerald-400");
+    btn.addEventListener("click", ()=>{
+      state.courtId = c.id;
+      renderCourtPicker();
+      renderSlots();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+function genSlotsForDay(dateISO, court){
+  const open = state.cfg.hours.open;
+  const close = state.cfg.hours.close;
+  const dur = court.durationMins;
+  const buffer = state.cfg.bufferMins;
+  const slots = [];
+  let start = new Date(`${dateISO}T${pad(open)}:00:00`);
+  while(true){
+    const end = new Date(start.getTime() + dur*60000);
+    if(end.getHours() > close || (end.getHours()===close && end.getMinutes()>0)) break;
+    slots.push({ start: new Date(start), end });
+    start = new Date(end.getTime() + buffer*60000);
+  }
+  return slots;
+}
+
+function isOverlap(aStart,aEnd,bStart,bEnd){
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function computePrice(court, start){
+  const base = court.basePrice;
+  const { start: phStart, end: phEnd, multiplier } = state.cfg.peakHours;
+  const hour = start.getHours();
+  const peak = hour >= phStart && hour < phEnd;
+  return Math.round(base * (peak ? multiplier : 1));
+}
+
+function renderSlots(){
+  const dateISO = $("#date").value;
+  const court = state.cfg.courts.find(c=>c.id===state.courtId);
+  const allBookings = loadBookings().filter(b=> b.courtId===court.id && b.dateISO===dateISO);
+  const taken = allBookings.map(b=>({start:new Date(b.startISO), end:new Date(b.endISO)}));
+  const list = $("#slotList");
+  list.innerHTML = "";
+  const slots = genSlotsForDay(dateISO, court);
+  if(!slots.length){
+    list.innerHTML = `<p class="text-gray-500">No slots available for this day.</p>`;
+    return;
+  }
+  slots.forEach(s=>{
+    const price = computePrice(court, s.start);
+    const disabled = taken.some(t => isOverlap(s.start, s.end, t.start, t.end));
+    const item = document.createElement("button");
+    item.className = "w-full flex items-center justify-between border rounded-xl p-3 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed";
+    item.disabled = disabled;
+    const time = `${pad(s.start.getHours())}:${pad(s.start.getMinutes())}–${pad(s.end.getHours())}:${pad(s.end.getMinutes())}`;
+    item.innerHTML = `<span class="font-medium">${time}</span><span class="font-semibold">${money(price)}</span>`;
+    item.addEventListener("click", ()=> openBookingModal({court, dateISO, start:s.start, end:s.end, price}));
+    list.appendChild(item);
+  });
+}
+
+function openBookingModal({court, dateISO, start, end, price}){
+  $("#modal").classList.remove("hidden");
+  $("#m-title").textContent = `${court.label}`;
+  $("#m-when").textContent = `${dateISO} • ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  $("#m-price").textContent = money(price);
+  $("#m-phone").value = "";
+  $("#m-name").value = "";
+  $("#m-notes").value = "";
+  $("#m-confirm").onclick = ()=>{
+    const name = $("#m-name").value.trim();
+    const phone = $("#m-phone").value.trim();
+    if(!/^\+?\d{8,15}$/.test(phone)){ alert("Enter a valid phone number with country code (e.g., +91xxxxxxxxxx)."); return; }
+    if(!name){ alert("Please enter your name."); return; }
+    const id = uuid();
+    const booking = {
+      id, courtId: court.id, courtLabel:court.label, dateISO,
+      startISO: start.toISOString(), endISO: end.toISOString(),
+      price, name, phone, notes: $("#m-notes").value.trim(), createdAt: new Date().toISOString()
+    };
+    saveBooking(booking);
+    $("#modal").classList.add("hidden");
+    renderSlots();
+    showConfirmation(booking);
+  };
+}
+
+function showConfirmation(b){
+  $("#c-id").textContent = b.id;
+  $("#c-when").textContent = `${b.dateISO} • ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+  $("#c-court").textContent = b.courtLabel;
+  $("#c-amount").textContent = money(b.price);
+  $("#confirmCard").classList.remove("hidden");
+  const whatsappText = encodeURIComponent(`Booking Request\\nName: ${b.name}\\nCourt: ${b.courtLabel}\\nDate: ${b.dateISO}\\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\\nAmount: ${money(b.price)}\\nBooking ID: ${b.id}`);
+  $("#confirmWA").href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
+}
+
+function closeModal(){ $("#modal").classList.add("hidden"); }
+
+function renderAmenities(){
+  const wrap = $("#amenities");
+  wrap.innerHTML = "";
+  state.cfg.amenities.forEach(a=>{
+    const chip = document.createElement("span");
+    chip.className = "px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200";
+    chip.textContent = a;
+    wrap.appendChild(chip);
+  });
+}
+
+function renderRules(){
+  const ul = $("#rules");
+  ul.innerHTML = "";
+  state.cfg.rules.forEach(r=>{
+    const li = document.createElement("li");
+    li.className = "flex gap-2 items-start";
+    li.innerHTML = `<span class="mt-2 h-2 w-2 rounded-full bg-emerald-500"></span><p>${r}</p>`;
+    ul.appendChild(li);
+  });
+}
+
+function renderPolicies(){
+  $("#refundPolicy").textContent = state.cfg.refundPolicy;
+}
+
+function renderMap(){
+  const map = $("#map");
+  map.innerHTML = `<iframe
+      class="w-full h-64 rounded-2xl border"
+      loading="lazy"
+      referrerpolicy="no-referrer-when-downgrade"
+      src="https://www.google.com/maps?q=${state.cfg.coords.lat},${state.cfg.coords.lng}&z=15&output=embed">
+    </iframe>`;
+}
+
+function renderGallery(){
+  const wrap = $("#gallery");
+  // Load 6 placeholders
+  wrap.innerHTML = "";
+  for(let i=1;i<=6;i++){
+    const a = document.createElement("a");
+    a.href = `./assets/gallery-${i}.svg`;
+    a.target = "_blank";
+    a.className = "block overflow-hidden rounded-2xl border hover:scale-[1.01] transition";
+    a.innerHTML = `<img src="./assets/gallery-${i}.svg" alt="Gallery ${i}" class="w-full h-48 object-cover" />`;
+    wrap.appendChild(a);
+  }
+}
+
+function attachHandlers(){
+  $("#closeModal").addEventListener("click", closeModal);
+  $("#m-cancel").addEventListener("click", closeModal);
+  // Admin link: keyboard 'A' opens prompt
+  document.addEventListener("keydown", (e)=>{
+    if(e.key.toLowerCase()==='a' && (e.ctrlKey || e.metaKey)){
+      window.location.href = "./admin.html";
+    }
+  });
+}
+
+window.addEventListener("load", init);
+
+
+// ==== Phase-2 Addons ====
+const waitlistKey = "turf_waitlist_v1";
+
+function loadWaitlist(){ try { return JSON.parse(localStorage.getItem(waitlistKey)||"[]"); } catch(e){ return []; } }
+function saveWaitlist(rows){ localStorage.setItem(waitlistKey, JSON.stringify(rows)); }
+
+function applyCoupon(code, amount){
+  if(!state.cfg.coupons || !code) return { amount, discount:0, code:null, reason:null };
+  const c = state.cfg.coupons.find(x=> x.code.toLowerCase() === code.toLowerCase());
+  if(!c) return { amount, discount:0, code:null, reason:"Invalid code" };
+  const today = new Date().toISOString().slice(0,10);
+  if(c.expires && c.expires < today) return { amount, discount:0, code:null, reason:"Expired code" };
+  if(amount < (c.minAmount||0)) return { amount, discount:0, code:null, reason:`Min amount ₹${c.minAmount}` };
+  let discount = 0;
+  if(c.type==="flat") discount = c.value;
+  if(c.type==="percent") discount = Math.round(amount * (c.value/100));
+  const final = Math.max(0, amount - discount);
+  return { amount: final, discount, code:c.code, reason:null };
+}
+
+function addWaitlist(dateISO, courtId, startISO, name, phone){
+  const id = uuid();
+  const rows = loadWaitlist();
+  rows.push({ id, dateISO, courtId, startISO, name, phone, createdAt:new Date().toISOString() });
+  saveWaitlist(rows);
+  alert("Added to waitlist ✅. We'll notify you if the slot opens.");
+}
+
+function linkJoinWaitlist(btn, slot, court){
+  const dateISO = $("#date").value;
+  btn.addEventListener("click", ()=>{
+    const name = prompt("Your name?"); if(!name) return;
+    const phone = prompt("Phone with country code (e.g., +91...)"); if(!phone) return;
+    addWaitlist(dateISO, court.id, slot.start.toISOString(), name, phone);
+  });
+}
+
+// Modify renderSlots to show Join Waitlist on disabled slots
+const _renderSlots = renderSlots;
+renderSlots = function(){
+  const dateISO = $("#date").value;
+  const court = state.cfg.courts.find(c=>c.id===state.courtId);
+  const allBookings = loadBookings().filter(b=> b.courtId===court.id && b.dateISO===dateISO);
+  const taken = allBookings.map(b=>({start:new Date(b.startISO), end:new Date(b.endISO)}));
+  const list = $("#slotList");
+  list.innerHTML = "";
+  const slots = genSlotsForDay(dateISO, court);
+  if(!slots.length){ list.innerHTML = `<p class="text-gray-500">No slots available for this day.</p>`; return; }
+  slots.forEach(s=>{
+    const price = computePrice(court, s.start);
+    const disabled = taken.some(t => isOverlap(s.start, s.end, t.start, t.end));
+    const item = document.createElement("div");
+    item.className = "w-full flex items-center justify-between border rounded-xl p-3 gap-3";
+    const time = `${pad(s.start.getHours())}:${pad(s.start.getMinutes())}–${pad(s.end.getHours())}:${pad(s.end.getMinutes())}`;
+    const left = document.createElement("div");
+    left.innerHTML = `<span class="font-medium">${time}</span><span class="ml-3 font-semibold">${money(price)}</span>`;
+    const right = document.createElement("div");
+    if(disabled){
+      const wl = document.createElement("button");
+      wl.className = "px-3 py-2 rounded-xl border text-gray-700 hover:bg-gray-50";
+      wl.textContent = "Join Waitlist";
+      linkJoinWaitlist(wl, s, court);
+      right.appendChild(wl);
+    } else {
+      const book = document.createElement("button");
+      book.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white";
+      book.textContent = "Book";
+      book.addEventListener("click", ()=> openBookingModal({court, dateISO, start:s.start, end:s.end, price}));
+      right.appendChild(book);
+    }
+    item.append(left, right);
+    list.appendChild(item);
+  });
+}
+
+// Modify openBookingModal to support coupon + repeat
+const _openBookingModal = openBookingModal;
+openBookingModal = function({court, dateISO, start, end, price}){
+  $("#modal").classList.remove("hidden");
+  $("#m-title").textContent = `${court.label}`;
+  $("#m-when").textContent = `${dateISO} • ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
+  $("#m-price").textContent = money(price);
+  $("#m-phone").value = "";
+  $("#m-name").value = "";
+  $("#m-notes").value = "";
+  $("#m-coupon").value = "";
+  $("#m-repeat").checked = false;
+
+  $("#m-confirm").onclick = ()=>{
+    const name = $("#m-name").value.trim();
+    const phone = $("#m-phone").value.trim();
+    const coupon = $("#m-coupon").value.trim();
+    const repeat = $("#m-repeat").checked;
+    const weeks = parseInt($("#m-weeks").value || "2", 10);
+    if(!/^\+?\d{8,15}$/.test(phone)){ alert("Enter a valid phone number with country code (e.g., +91xxxxxxxxxx)."); return; }
+    if(!name){ alert("Please enter your name."); return; }
+    const pricing = applyCoupon(coupon, price);
+    if(pricing.reason){ alert(pricing.reason); return; }
+
+    const bookings = [];
+    const occurrences = repeat ? weeks : 1;
+    let startTime = new Date(start);
+    let endTime = new Date(end);
+    for(let i=0;i<occurrences;i++){
+      const id = uuid();
+      const booking = {
+        id, courtId: court.id, courtLabel:court.label, dateISO: dateISO,
+        startISO: startTime.toISOString(), endISO: endTime.toISOString(),
+        price: pricing.amount, discount: pricing.discount, coupon: pricing.code || null,
+        name, phone, notes: $("#m-notes").value.trim(), createdAt: new Date().toISOString()
+      };
+      saveBooking(booking);
+      bookings.push(booking);
+      // advance by 7 days
+      startTime = new Date(startTime.getTime() + 7*24*60*60*1000);
+      endTime = new Date(endTime.getTime() + 7*24*60*60*1000);
+    }
+
+    $("#modal").classList.add("hidden");
+    renderSlots();
+    showConfirmation(bookings[0]);
+    // Payment stub
+    if(state.cfg.payments?.enabled && state.cfg.payments.provider === "razorpay"){
+      launchRazorpay(name, phone, pricing.amount, bookings[0].id);
+    }
+  };
+}
+
+function launchRazorpay(name, phone, amount, bookingId){
+  if(!window.Razorpay){ alert("Razorpay not loaded. Enable the script include and set your key."); return; }
+  const opts = {
+    key: state.cfg.payments.razorpay_key,
+    amount: amount * 100,
+    currency: state.cfg.payments.currency || "INR",
+    name: state.cfg.name,
+    description: `Booking ${bookingId}`,
+    prefill: { name, contact: phone },
+    handler: function (response) {
+      alert("Payment successful: " + response.razorpay_payment_id);
+    },
+    theme: { color: "#22c55e" }
+  };
+  const rzp = new Razorpay(opts);
+  rzp.open();
+}
