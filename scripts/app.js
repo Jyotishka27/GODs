@@ -331,12 +331,27 @@ function showConfirmation(b){
     statusEl.className = "mt-2 text-sm booking-status";
     $("#confirmCard").insertBefore(statusEl, $("#confirmCard").querySelector(".mt-3"));
   }
-  statusEl.textContent = `Status: ${b.status || 'pending'}`; // pending / confirmed
+  const statusText = b.status || 'pending';
+  statusEl.textContent = `Status: ${statusText}`; // pending / confirmed
   statusEl.classList.remove('status-pending','status-confirmed');
   statusEl.classList.add((b.status === 'confirmed') ? 'status-confirmed' : 'status-pending');
 
+  // Friendly message when pending
+  let pendingNote = $("#confirmCard").querySelector(".booking-pending-note");
+  if(statusText === 'pending'){
+    if(!pendingNote){
+      pendingNote = document.createElement("div");
+      pendingNote.className = "mt-2 text-sm text-gray-700 booking-pending-note";
+      // insert right below status
+      statusEl.insertAdjacentElement('afterend', pendingNote);
+    }
+    pendingNote.textContent = "Booking received — pending confirmation. We’ll notify you on your phone.";
+  } else {
+    if(pendingNote) pendingNote.remove();
+  }
+
   // update WA link too
-  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${$("#c-court").textContent}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${b.status || 'pending'}`);
+  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${$("#c-court").textContent}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${statusText}`);
   $("#confirmWA").href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
 }
 
