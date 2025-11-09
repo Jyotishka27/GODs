@@ -1,0 +1,7 @@
+
+/* Minimal custom styles; Tailwind handles most UI */
+:root { --brand:#22c55e; --brand-dark:#16a34a; }
+html, body { scroll-behavior: smooth; }
+.glow { box-shadow: 0 10px 30px rgba(34,197,94,0.35); }
+.input-like { @apply border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400; }
+button[disabled] { opacity: .6; cursor: not-allowed; }
