@@ -1,0 +1,78 @@
+{
+  "name": "GreenGoal Turf",
+  "phone": "+91-98765-43210",
+  "whatsapp": "919876543210",
+  "email": "hello@greengoal.example",
+  "address": "Near City Sports Complex, New Town, Kolkata 700156",
+  "coords": {
+    "lat": 22.594,
+    "lng": 88.479
+  },
+  "courts": [
+    {
+      "id": "7A",
+      "label": "Half Ground Football",
+      "basePrice": 1500,
+      "durationMins": 60
+    },
+    {
+      "id": "5A",
+      "label": "Full Ground Football",
+      "basePrice": 2500,
+      "durationMins": 60
+    },
+    {
+      "id": "CRK",
+      "label": "Cricket (Full Ground)",
+      "basePrice": 2500,
+      "durationMins": 60
+    }
+  ],
+  "hours": {
+    "open": 6,
+    "close": 23
+  },
+  "peakHours": {
+    "start": 17,
+    "end": 22,
+    "multiplier": 1.25
+  },
+  "bufferMins": 10,
+  "amenities": [
+    "Floodlights",
+    "Parking",
+    "Washrooms",
+    "Changing Rooms",
+    "Filtered Water",
+    "First Aid"
+  ],
+  "rules": [
+    "Only turf-safe shoes.",
+    "No smoking or alcohol on premises.",
+    "Arrive 10 mins early.",
+    "Respect your slot timing; buffers are enforced."
+  ],
+  "refundPolicy": "Free reschedule up to 6 hours prior. Refunds (if any) are processed to original method within 5\u20137 business days.",
+  "coupons": [
+    {
+      "code": "WELCOME100",
+      "type": "flat",
+      "value": 100,
+      "minAmount": 800,
+      "expires": "2099-12-31"
+    },
+    {
+      "code": "OFFPEAK10",
+      "type": "percent",
+      "value": 10,
+      "minAmount": 0,
+      "expires": "2099-12-31"
+    }
+  ],
+  "payments": {
+    "provider": "razorpay",
+    "enabled": false,
+    "razorpay_key": "rzp_test_xxxxxxxxxxxxx",
+    "currency": "INR"
+  }
+}
