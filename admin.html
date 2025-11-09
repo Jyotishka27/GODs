@@ -227,7 +227,7 @@
                 <div class="font-medium">${escapeHtml(n.title)}</div>
                 <div class="text-xs text-gray-600 mt-1 whitespace-pre-wrap">${escapeHtml(n.body)}</div>
               </div>
-              <div class="text-xs text-gray-400">${new Date(n.createdAt).toLocaleString()}</div>
+              <div class="text-xs text-gray-400">${timeAgo(n.createdAt)} • ${new Date(n.createdAt).toLocaleString()}</div>
             </div>
           </div>`;
         }).join('');
