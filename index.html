@@ -31,8 +31,7 @@
   <style> body{font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;} </style>
 
   <link rel="manifest" href="./manifest.webmanifest" />
-  <!-- Razorpay (enable when payments.enabled=true in site.json) -->
-  <script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>
+  <!-- NOTE: Razorpay checkout removed because this build will handle bookings only and payments are "Pay at venue" -->
   <script>
     if('serviceWorker' in navigator){ window.addEventListener('load', ()=> navigator.serviceWorker.register('./service-worker.js')); }
   </script>
@@ -50,12 +49,10 @@
         <a href="#book" class="hover:text-emerald-600">Book</a>
         <a href="#gallery" class="hover:text-emerald-600">Gallery</a>
         <a href="#contact" class="hover:text-emerald-600">Contact</a>
-        <a href="./login.html" class="hover:text-emerald-600">Admin</a>
-        <a href="./analytics.html" class="hover:text-emerald-600">Analytics</a>
       </nav>
       <div class="flex items-center gap-2">
-        <a id="waLink" target="_blank" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">WhatsApp</a>
-        <a id="callLink" class="px-3 py-2 rounded-xl border hover:bg-gray-50">Call</a>
+        <a id="waLink" href="https://wa.me/919876543210" target="_blank" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">WhatsApp</a>
+        <a id="callLinkHeader" href="tel:+919876543210" class="px-3 py-2 rounded-xl border hover:bg-gray-50">Call</a>
       </div>
     </div>
   </header>
@@ -122,7 +119,7 @@
           <p class="text-sm mt-2"><span id="addr"></span></p>
           <div class="mt-3 space-y-2 text-sm">
             <a id="emailLink" class="block underline">Email</a>
-            <a id="callLink2" class="block underline" href="tel:+919876543210">Call</a>
+            <a id="callLink" class="block underline" href="tel:+919876543210">Call</a>
           </div>
         </div>
       </aside>
@@ -143,7 +140,7 @@
     <div class="grid md:grid-cols-2 gap-6">
       <div class="p-4 border rounded-2xl">
         <h3 class="font-semibold mb-2">Rules</h3>
-        <ul id="rules" class="space-y-2"></ul>
+        <ul id="rulesList" class="space-y-2"></ul>
       </div>
       <div class="p-4 border rounded-2xl">
         <h3 class="font-semibold mb-2">Refund & Reschedule</h3>
