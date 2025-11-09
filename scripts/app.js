@@ -71,6 +71,9 @@ function overwriteAllBookings(rows){ localStorage.setItem(storeKey, JSON.stringi
 
 function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
 
+// track which booking is currently shown on the confirmation card
+let currentShownBookingId = null;
+
 async function init(){
   const res = await fetch(siteCfgUrl);
   state.cfg = await res.json();
@@ -256,22 +259,29 @@ Customer: ${booking.name}, ${booking.phone}`;
 }
 
 function showConfirmation(b){
+  if(!b) return;
+  currentShownBookingId = b.id; // remember which booking is on screen
   $("#c-id").textContent = b.id;
   $("#c-when").textContent = `${b.dateISO} • ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
-  $("#c-court").textContent = b.courtLabel;
+  $("#c-court").textContent = b.courtLabel || (state.cfg.courts.find(c=>c.id===b.courtId)?.label || "");
   $("#c-amount").textContent = money(b.price);
   $("#confirmCard").classList.remove("hidden");
 
-  // status display
+  // show status indicator
   let statusEl = $("#confirmCard").querySelector(".booking-status");
   if(!statusEl){
     statusEl = document.createElement("div");
     statusEl.className = "mt-2 text-sm booking-status";
     $("#confirmCard").insertBefore(statusEl, $("#confirmCard").querySelector(".mt-3"));
   }
-  statusEl.textContent = `Status: ${b.status || 'pending'}`;
+  statusEl.textContent = `Status: ${b.status || 'pending'}`; // pending / confirmed
 
-  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${b.courtLabel}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${b.status || 'pending'}`);
+  // also add classes so styling can reflect status (optional)
+  statusEl.classList.remove('status-pending','status-confirmed');
+  statusEl.classList.add((b.status === 'confirmed') ? 'status-confirmed' : 'status-pending');
+
+  // update WA link too
+  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${$("#c-court").textContent}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${b.status || 'pending'}`);
   $("#confirmWA").href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
 }
 
@@ -340,6 +350,20 @@ function attachHandlers(){
 
 window.addEventListener("load", init);
 
+// Listen for admin confirmation event and update confirmation card if it matches the shown booking
+window.addEventListener('booking:confirmed', (ev)=>{
+  try{
+    const detail = ev && ev.detail;
+    const id = detail && detail.id;
+    if(!id) return;
+    if(id === currentShownBookingId){
+      // re-read the booking from storage (fresh)
+      const all = loadBookings();
+      const b = all.find(x=> x.id === id);
+      if(b) showConfirmation(b);
+    }
+  }catch(e){ console.warn('booking:confirmed handler error', e); }
+});
 
 // ==== Phase-2 Addons ====
 const waitlistKey = "turf_waitlist_v1";
@@ -416,9 +440,9 @@ renderSlots = function(){
   });
 }
 
-// Modify openBookingModal to support coupon + repeat
+// Keep openBookingModal behavior (already defined above)
 const _openBookingModal = openBookingModal;
-openBookingModal = _openBookingModal; // already defined above; keep current behavior
+openBookingModal = _openBookingModal; // keep
 
 // Admin helpers: load all bookings and confirm
 function loadAllBookings(){ return loadBookings(); }
@@ -450,7 +474,7 @@ Confirmed by admin.`;
   await sendSMS(state.cfg.phone, adminMsg);
   pushAdminNotification({ type: 'booking-confirmed', title: `Booking confirmed — ${b.id}`, body: adminMsg, bookingId: b.id });
 
-  // notify admin UI to refresh
+  // notify admin UI to refresh and let other clients update their confirmation card
   window.dispatchEvent(new CustomEvent('booking:confirmed', { detail: b }));
   return true;
 }
