@@ -1,6 +1,6 @@
 {
   "name": "GODs Turf",
-  "phone": "+91-98765-43210",
+  "phone": "+919876543210",
   "whatsapp": "919876543210",
   "email": "hello@gods.example",
   "address": "Near City Sports Complex, New Town, Kolkata 700156",
@@ -8,13 +8,15 @@
     "lat": 22.594,
     "lng": 88.479
   },
-   "courts": [
+  "courts": [
     { "id": "5A",  "label": "Half Ground Football", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
     { "id": "5A-B","label": "Half Ground Football (other half)", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
     { "id": "7A",  "label": "Full Ground Football", "durationMins": 60, "basePrice": 2500,  "resourceId": "main-pitch", "units": 2 },
     { "id": "CRK", "label": "Cricket", "durationMins": 60, "basePrice": 2500, "resourceId": "main-pitch", "units": 2 }
   ],
-  
+  "resourceCapacity": {
+    "main-pitch": 2
+  },
   "hours": {
     "open": 6,
     "close": 23
@@ -39,7 +41,7 @@
     "Arrive 10 mins early.",
     "Respect your slot timing; buffers are enforced."
   ],
-  "refundPolicy": "Free reschedule up to 6 hours prior. Refunds (if any) are processed to original method within 5\u20137 business days.",
+  "refundPolicy": "Free reschedule up to 6 hours prior. Refunds (if any) are processed to original method within 5–7 business days.",
   "coupons": [
     {
       "code": "WELCOME100",
@@ -56,15 +58,9 @@
       "expires": "2099-12-31"
     }
   ],
-  "payments": {
-    "provider": "razorpay",
-    "enabled": false,
-    "razorpay_key": "rzp_test_xxxxxxxxxxxxx",
-    "currency": "INR"
-  }
   "sms": {
-  "enabled": true,
-  "endpoint": "https://your-serverless.example.com/send-sms",
-  "authHeader": "Bearer YOUR_KEY_IF_NEEDED"
+    "enabled": true,
+    "endpoint": "https://your-serverless.example.com/send-sms",
+    "authHeader": "Bearer YOUR_KEY_IF_NEEDED"
   }
 }
