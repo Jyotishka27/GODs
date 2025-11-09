@@ -75,4 +75,9 @@
     "razorpay_key": "rzp_test_xxxxxxxxxxxxx",
     "currency": "INR"
   }
+  "sms": {
+  "enabled": true,
+  "endpoint": "https://your-serverless.example.com/send-sms",
+  "authHeader": "Bearer YOUR_KEY_IF_NEEDED"
+  }
 }
