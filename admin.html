@@ -42,6 +42,16 @@
         </select>
       </div>
 
+      <!-- STATUS FILTER (NEW) -->
+      <div class="flex gap-2 items-end">
+        <label class="text-sm text-gray-600">Status</label>
+        <select id="filterStatus" class="border rounded-xl px-3 py-2">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+        </select>
+      </div>
+
       <button id="exportCsv" class="px-3 py-2 rounded-xl bg-emerald-600 text-white">Export CSV</button>
       <button id="clearAll" class="px-3 py-2 rounded-xl border text-red-600">Delete All Bookings</button>
       <button id="refreshBtn" class="px-3 py-2 rounded-xl border">Refresh</button>
@@ -129,6 +139,7 @@
       const wlRowsEl = $('#wlRows');
       const filterDate = $('#filterDate');
       const filterCourt = $('#filterCourt');
+      const filterStatus = $('#filterStatus'); // NEW
       const exportCsvBtn = $('#exportCsv');
       const clearAllBtn = $('#clearAll');
       const refreshBtn = $('#refreshBtn');
@@ -165,19 +176,37 @@
         }
       }
 
+      // timeAgo helper for notifications
+      function timeAgo(iso){
+        const then = new Date(iso).getTime();
+        const diff = Math.max(0, Date.now() - then);
+        const sec = Math.floor(diff/1000);
+        if(sec < 60) return `${sec}s ago`;
+        const min = Math.floor(sec/60);
+        if(min < 60) return `${min}m ago`;
+        const hr = Math.floor(min/60);
+        if(hr < 24) return `${hr}h ago`;
+        const day = Math.floor(hr/24);
+        return `${day}d ago`;
+      }
+
       function renderBookings(){
         const all = loadBookings();
         const date = filterDate.value;
         const court = filterCourt.value;
+        const status = filterStatus?.value; // NEW
         const filtered = all.filter(b=>{
           if(date && b.dateISO !== date) return false;
           if(court && b.courtId !== court) return false;
+          // treat missing status as 'pending' for legacy bookings
+          const s = (b.status || 'pending');
+          if(status && s !== status) return false;
           return true;
         }).sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
         rowsEl.innerHTML = filtered.map(b=>{
           const start = new Date(b.startISO);
           const startTime = start.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-          const statusBadge = b.status === 'confirmed' 
+          const statusBadge = ( (b.status || 'pending') === 'confirmed' ) 
             ? `<span class="px-2 py-1 rounded-full text-xs bg-emerald-100 text-emerald-700">Confirmed</span>`
             : `<span class="px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-700">Pending</span>`;
           return `<tr class="border-t">
@@ -190,7 +219,7 @@
             <td class="px-3 py-2 align-top">${money(b.price)}</td>
             <td class="px-3 py-2 align-top">${escapeHtml(b.notes || '')}</td>
             <td class="px-3 py-2 align-top">
-              ${b.status !== 'confirmed' ? `<button data-id="${b.id}" class="confirm-btn px-3 py-1 rounded-xl bg-emerald-600 text-white text-sm">Confirm</button>` : ''}
+              ${ (b.status || 'pending') !== 'confirmed' ? `<button data-id="${b.id}" class="confirm-btn px-3 py-1 rounded-xl bg-emerald-600 text-white text-sm">Confirm</button>` : ''}
               <button data-id="${b.id}" class="view-btn mt-1 px-3 py-1 rounded-xl border text-sm">View</button>
               <button data-id="${b.id}" class="delete-btn mt-1 px-3 py-1 rounded-xl border text-sm text-red-600">Delete</button>
             </td>
@@ -292,14 +321,17 @@
       function money(n){ return '₹' + Number(n||0).toLocaleString('en-IN'); }
       function escapeHtml(s){ if(!s) return ''; return String(s).replace(/[&<>"]/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-      // Export CSV of currently filtered bookings
+      // Export CSV of currently filtered bookings (now respects status)
       function exportCsv(){
         const all = loadBookings();
         const date = filterDate.value;
         const court = filterCourt.value;
+        const status = filterStatus?.value;
         const filtered = all.filter(b=>{
           if(date && b.dateISO !== date) return false;
           if(court && b.courtId !== court) return false;
+          const s = (b.status || 'pending');
+          if(status && s !== status) return false;
           return true;
         });
         if(!filtered.length){ alert('No bookings to export for selected filters.'); return; }
@@ -347,6 +379,7 @@
 
       filterDate.onchange = renderBookings;
       filterCourt.onchange = renderBookings;
+      filterStatus.onchange = renderBookings; // NEW
 
       // React to booking:confirmed event from app.js
       window.addEventListener('booking:confirmed', (ev)=>{
@@ -358,6 +391,17 @@
       // initial load
       (async function start(){
         await populateCourts();
+
+        // migrate old bookings that lack 'status' to 'pending'
+        (function migrateStatuses(){
+          try{
+            const arr = JSON.parse(localStorage.getItem(bookingsKey) || '[]');
+            let changed = false;
+            arr.forEach(b => { if(!b.status){ b.status = 'pending'; changed = true; }});
+            if(changed) localStorage.setItem(bookingsKey, JSON.stringify(arr));
+          }catch(e){ /* ignore */ }
+        })();
+
         // set default filter date to today
         filterDate.value = new Date().toISOString().slice(0,10);
         renderBookings();
