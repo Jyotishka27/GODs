@@ -1,4 +1,3 @@
-
 // Lightweight booking UI using localStorage as a demo backend
 const $ = (sel, el=document) => el.querySelector(sel);
 const $$ = (sel, el=document) => [...el.querySelectorAll(sel)];
@@ -15,7 +14,6 @@ const state = {
 
 // Notifications & admin message store
 const notificationsKey = "turf_notifications_v1";
-
 function loadNotifications(){ try { return JSON.parse(localStorage.getItem(notificationsKey)||"[]"); } catch(e){ return []; } }
 function saveNotifications(rows){ localStorage.setItem(notificationsKey, JSON.stringify(rows)); }
 
@@ -69,6 +67,8 @@ function saveBooking(booking){
   localStorage.setItem(storeKey, JSON.stringify(all));
   return booking.id;
 }
+function overwriteAllBookings(rows){ localStorage.setItem(storeKey, JSON.stringify(rows)); }
+
 function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
 
 async function init(){
@@ -184,21 +184,74 @@ function openBookingModal({court, dateISO, start, end, price}){
   $("#m-phone").value = "";
   $("#m-name").value = "";
   $("#m-notes").value = "";
-  $("#m-confirm").onclick = ()=>{
+  $("#m-coupon").value = "";
+  $("#m-repeat").checked = false;
+
+  $("#m-confirm").onclick = async ()=>{
     const name = $("#m-name").value.trim();
     const phone = $("#m-phone").value.trim();
+    const coupon = $("#m-coupon").value.trim();
+    const repeat = $("#m-repeat").checked;
+    const weeks = parseInt($("#m-weeks").value || "2", 10);
     if(!/^\+?\d{8,15}$/.test(phone)){ alert("Enter a valid phone number with country code (e.g., +91xxxxxxxxxx)."); return; }
     if(!name){ alert("Please enter your name."); return; }
-    const id = uuid();
-    const booking = {
-      id, courtId: court.id, courtLabel:court.label, dateISO,
-      startISO: start.toISOString(), endISO: end.toISOString(),
-      price, name, phone, notes: $("#m-notes").value.trim(), createdAt: new Date().toISOString()
-    };
-    saveBooking(booking);
+    const pricing = applyCoupon(coupon, price);
+    if(pricing.reason){ alert(pricing.reason); return; }
+
+    const bookings = [];
+    const occurrences = repeat ? weeks : 1;
+    let startTime = new Date(start);
+    let endTime = new Date(end);
+
+    for(let i=0;i<occurrences;i++){
+      const id = uuid();
+      const booking = {
+        id,
+        courtId: court.id,
+        courtLabel: court.label,
+        dateISO: dateISO,
+        startISO: startTime.toISOString(),
+        endISO: endTime.toISOString(),
+        price: pricing.amount,
+        discount: pricing.discount || 0,
+        coupon: pricing.code || null,
+        name,
+        phone,
+        notes: $("#m-notes").value.trim(),
+        createdAt: new Date().toISOString(),
+        status: "pending" // important - pending until admin confirms
+      };
+
+      saveBooking(booking);
+      bookings.push(booking);
+
+      // Notify user (SMS) — pending
+      const userMsg = `GODs Turf — Booking received (PENDING).
+Name: ${booking.name}
+Date: ${booking.dateISO}
+Time: ${new Date(booking.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+Amount: ${money(booking.price)}
+Booking ID: ${booking.id}
+Status: Pending confirmation.`;
+      sendSMS(booking.phone, userMsg);
+
+      // Notify admin (SMS + in-app)
+      const adminMsg = `New booking PENDING.
+ID: ${booking.id}
+Court: ${booking.courtLabel}
+When: ${booking.dateISO} ${new Date(booking.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+Customer: ${booking.name}, ${booking.phone}`;
+      sendSMS(state.cfg.phone, adminMsg);
+      pushAdminNotification({ type: 'booking-pending', title: `Booking pending — ${booking.id}`, body: adminMsg, bookingId: booking.id });
+
+      // advance by 7 days for repeats
+      startTime = new Date(startTime.getTime() + 7*24*60*60*1000);
+      endTime = new Date(endTime.getTime() + 7*24*60*60*1000);
+    }
+
     $("#modal").classList.add("hidden");
     renderSlots();
-    showConfirmation(booking);
+    showConfirmation(bookings[0]);
   };
 }
 
@@ -208,7 +261,17 @@ function showConfirmation(b){
   $("#c-court").textContent = b.courtLabel;
   $("#c-amount").textContent = money(b.price);
   $("#confirmCard").classList.remove("hidden");
-  const whatsappText = encodeURIComponent(`Booking Request\\nName: ${b.name}\\nCourt: ${b.courtLabel}\\nDate: ${b.dateISO}\\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\\nAmount: ${money(b.price)}\\nBooking ID: ${b.id}`);
+
+  // status display
+  let statusEl = $("#confirmCard").querySelector(".booking-status");
+  if(!statusEl){
+    statusEl = document.createElement("div");
+    statusEl.className = "mt-2 text-sm booking-status";
+    $("#confirmCard").insertBefore(statusEl, $("#confirmCard").querySelector(".mt-3"));
+  }
+  statusEl.textContent = `Status: ${b.status || 'pending'}`;
+
+  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${b.courtLabel}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${b.status || 'pending'}`);
   $("#confirmWA").href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
 }
 
@@ -355,71 +418,42 @@ renderSlots = function(){
 
 // Modify openBookingModal to support coupon + repeat
 const _openBookingModal = openBookingModal;
-openBookingModal = function({court, dateISO, start, end, price}){
-  $("#modal").classList.remove("hidden");
-  $("#m-title").textContent = `${court.label}`;
-  $("#m-when").textContent = `${dateISO} • ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
-  $("#m-price").textContent = money(price);
-  $("#m-phone").value = "";
-  $("#m-name").value = "";
-  $("#m-notes").value = "";
-  $("#m-coupon").value = "";
-  $("#m-repeat").checked = false;
+openBookingModal = _openBookingModal; // already defined above; keep current behavior
 
-  $("#m-confirm").onclick = ()=>{
-    const name = $("#m-name").value.trim();
-    const phone = $("#m-phone").value.trim();
-    const coupon = $("#m-coupon").value.trim();
-    const repeat = $("#m-repeat").checked;
-    const weeks = parseInt($("#m-weeks").value || "2", 10);
-    if(!/^\+?\d{8,15}$/.test(phone)){ alert("Enter a valid phone number with country code (e.g., +91xxxxxxxxxx)."); return; }
-    if(!name){ alert("Please enter your name."); return; }
-    const pricing = applyCoupon(coupon, price);
-    if(pricing.reason){ alert(pricing.reason); return; }
+// Admin helpers: load all bookings and confirm
+function loadAllBookings(){ return loadBookings(); }
 
-    const bookings = [];
-    const occurrences = repeat ? weeks : 1;
-    let startTime = new Date(start);
-    let endTime = new Date(end);
-    for(let i=0;i<occurrences;i++){
-      const id = uuid();
-      const booking = {
-        id, courtId: court.id, courtLabel:court.label, dateISO: dateISO,
-        startISO: startTime.toISOString(), endISO: endTime.toISOString(),
-        price: pricing.amount, discount: pricing.discount, coupon: pricing.code || null,
-        name, phone, notes: $("#m-notes").value.trim(), createdAt: new Date().toISOString()
-      };
-      saveBooking(booking);
-      bookings.push(booking);
-      // advance by 7 days
-      startTime = new Date(startTime.getTime() + 7*24*60*60*1000);
-      endTime = new Date(endTime.getTime() + 7*24*60*60*1000);
-    }
+async function confirmBooking(bookingId, adminNote){
+  const rows = loadAllBookings();
+  const idx = rows.findIndex(b => b.id === bookingId);
+  if(idx === -1) { console.warn('booking not found', bookingId); return false; }
+  rows[idx].status = "confirmed";
+  rows[idx].adminNote = adminNote || "";
+  rows[idx].confirmedAt = new Date().toISOString();
+  overwriteAllBookings(rows);
 
-    $("#modal").classList.add("hidden");
-    renderSlots();
-    showConfirmation(bookings[0]);
-    // Payment stub
-    if(state.cfg.payments?.enabled && state.cfg.payments.provider === "razorpay"){
-      launchRazorpay(name, phone, pricing.amount, bookings[0].id);
-    }
-  };
+  const b = rows[idx];
+  // notify user
+  const userMsg = `GODs Turf — Booking Confirmed ✅
+Booking ID: ${b.id}
+Date: ${b.dateISO}
+Time: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+Court: ${b.courtLabel}
+Collect payment at counter.`;
+  await sendSMS(b.phone, userMsg);
+
+  // notify admin (confirmation)
+  const adminMsg = `Booking CONFIRMED.
+ID: ${b.id}
+Customer: ${b.name}, ${b.phone}
+Confirmed by admin.`;
+  await sendSMS(state.cfg.phone, adminMsg);
+  pushAdminNotification({ type: 'booking-confirmed', title: `Booking confirmed — ${b.id}`, body: adminMsg, bookingId: b.id });
+
+  // notify admin UI to refresh
+  window.dispatchEvent(new CustomEvent('booking:confirmed', { detail: b }));
+  return true;
 }
 
-function launchRazorpay(name, phone, amount, bookingId){
-  if(!window.Razorpay){ alert("Razorpay not loaded. Enable the script include and set your key."); return; }
-  const opts = {
-    key: state.cfg.payments.razorpay_key,
-    amount: amount * 100,
-    currency: state.cfg.payments.currency || "INR",
-    name: state.cfg.name,
-    description: `Booking ${bookingId}`,
-    prefill: { name, contact: phone },
-    handler: function (response) {
-      alert("Payment successful: " + response.razorpay_payment_id);
-    },
-    theme: { color: "#22c55e" }
-  };
-  const rzp = new Razorpay(opts);
-  rzp.open();
-}
+// remove online payments completely: noop launchRazorpay to avoid accidental calls (kept for reference)
+function launchRazorpay(){ console.warn('Payments disabled — launchRazorpay() is a noop'); }
