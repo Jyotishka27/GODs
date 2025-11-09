@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin — GODs Turf</title>
+  <link rel="icon" href="./assets/logo.svg" type="image/svg+xml"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style> body{font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;} </style>
+</head>
+<body class="bg-white text-gray-900">
+  <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a class="flex items-center gap-2" href="./index.html">
+        <img src="./assets/logo.svg" class="h-8 w-8" alt="logo">
+        <span class="font-bold">Admin — <span id="bizName"></span></span>
+      </a>
+      <div class="flex items-center gap-2">
+        <a href="./index.html" class="px-3 py-2 rounded-xl border">Back to site</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    <div class="mb-6 flex gap-2">
+      <a href="./admin.html" class="px-3 py-2 rounded-xl bg-emerald-600 text-white">Bookings</a>
+      <a href="./admin.html#waitlist" onclick="document.getElementById('wl').scrollIntoView();return false;" class="px-3 py-2 rounded-xl border">Waitlist</a>
+    </div>
+    <div class="flex flex-wrap items-end gap-3 mb-4">
+      <input id="filterDate" type="date" class="border rounded-xl px-3 py-2"/>
+      <select id="filterCourt" class="border rounded-xl px-3 py-2">
+        <option value="">All courts</option>
+        <option value="5A">Half Ground Football</option>
+        <option value="7A">Full Ground Football</option>
+        <option value="CRK">Cricket</option>
+      </select>
+      <button id="exportCsv" class="px-3 py-2 rounded-xl bg-emerald-600 text-white">Export CSV</button>
+      <button id="clearAll" class="px-3 py-2 rounded-xl border text-red-600">Delete All</button>
+    </div>
+    <div class="overflow-auto border rounded-2xl">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-3 py-2 text-left">ID</th>
+            <th class="px-3 py-2 text-left">Court</th>
+            <th class="px-3 py-2 text-left">Date</th>
+            <th class="px-3 py-2 text-left">Start</th>
+            <th class="px-3 py-2 text-left">Customer</th>
+            <th class="px-3 py-2 text-left">Amount</th>
+            <th class="px-3 py-2 text-left">Notes</th>
+            <th class="px-3 py-2 text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    
+    <section id="wl" class="mt-10">
+      <h2 class="font-semibold mb-2">Waitlist</h2>
+      <div class="overflow-auto border rounded-2xl">
+        <table class="min-w-full text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left">ID</th>
+              <th class="px-3 py-2 text-left">Court</th>
+              <th class="px-3 py-2 text-left">Date</th>
+              <th class="px-3 py-2 text-left">Time</th>
+              <th class="px-3 py-2 text-left">Customer</th>
+              <th class="px-3 py-2 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="wlRows"></tbody>
+        </table>
+      </div>
+    </section>
+</div>
+    <p class="text-xs text-gray-500 mt-2">* Demo admin uses browser storage. Wire it to Firestore / Supabase / your backend for production.</p>
+  </main>
+  <script src="./scripts/admin.js"></script>
+</body>
+</html>
