@@ -71,6 +71,38 @@ function overwriteAllBookings(rows){ localStorage.setItem(storeKey, JSON.stringi
 
 function uuid(){ return 'xxxxxx'.replace(/x/g, ()=> (Math.random()*36|0).toString(36)); }
 
+async function confirmBooking(bookingId, adminNote){
+  const rows = loadBookings();
+  const idx = rows.findIndex(b => b.id === bookingId);
+  if(idx === -1) { console.warn('booking not found', bookingId); return false; }
+  rows[idx].status = "confirmed";
+  rows[idx].adminNote = adminNote || "";
+  rows[idx].confirmedAt = new Date().toISOString();
+  overwriteAllBookings(rows);
+
+  const b = rows[idx];
+  // notify user
+  const userMsg = `GODs Turf — Booking Confirmed ✅
+Booking ID: ${b.id}
+Date: ${b.dateISO}
+Time: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+Court: ${b.courtLabel}
+Collect payment at counter.`;
+  await sendSMS(b.phone, userMsg);
+
+  // notify admin (confirmation)
+  const adminMsg = `Booking CONFIRMED.
+ID: ${b.id}
+Customer: ${b.name}, ${b.phone}
+Confirmed by admin.`;
+  await sendSMS(state.cfg.phone, adminMsg);
+  pushAdminNotification({ type: 'booking-confirmed', title: `Booking confirmed — ${b.id}`, body: adminMsg, bookingId: b.id });
+
+  // inform other clients / admin UI
+  window.dispatchEvent(new CustomEvent('booking:confirmed', { detail: b }));
+  return true;
+}
+
 // track which booking is currently shown on the confirmation card
 let currentShownBookingId = null;
 
