@@ -80,7 +80,31 @@ function toIST(d){
 }
 function money(n){ return `₹${Number(n||0).toLocaleString('en-IN')}`; }
 
-// -------------------- Admin: confirmBooking (where you asked to add) --------------------
+// -------------------- Resource / capacity helpers (NEW) --------------------
+// Expectation in data/site.json:
+// - each court can include: resourceId (string), units (number)
+// - state.cfg.resourceCapacity is an object mapping resourceId -> capacity number
+// Example: state.cfg.resourceCapacity = { "main-pitch": 2 }
+
+function getCourtById(id){
+  return (state.cfg?.courts || []).find(c => c.id === id);
+}
+function getCourtUnitsById(id){
+  const c = getCourtById(id);
+  return (c && typeof c.units === 'number') ? c.units : 1;
+}
+function getResourceIdByCourtId(id){
+  const c = getCourtById(id);
+  return (c && c.resourceId) ? c.resourceId : id;
+}
+function getResourceCapacity(resourceId){
+  if(!state.cfg) return 1;
+  if(state.cfg.resourceCapacity && typeof state.cfg.resourceCapacity[resourceId] === 'number') return state.cfg.resourceCapacity[resourceId];
+  // fallback: if not configured, default to 1 (behavior: block same court only)
+  return 1;
+}
+
+// -------------------- Admin: confirmBooking --------------------
 async function confirmBooking(bookingId, adminNote){
   const rows = loadAllBookings();
   const idx = rows.findIndex(b => b.id === bookingId);
@@ -208,13 +232,27 @@ function computePrice(court, start){
   return Math.round(base * (peak ? multiplier : 1));
 }
 
+// -------------------- renderSlots (resource-aware) --------------------
+// This version uses resourceId / units / resourceCapacity to decide conflicts.
+// Backwards-compatible: if resourceId/units/capacity are missing, it falls back to blocking same courtId only.
 function renderSlots(){
   const dateInput = $("#date");
   if(!dateInput) return;
   const dateISO = dateInput.value;
   const court = state.cfg.courts.find(c=>c.id===state.courtId);
-  const allBookings = loadBookings().filter(b=> b.courtId===court.id && b.dateISO===dateISO);
-  const taken = allBookings.map(b=>({start:new Date(b.startISO), end:new Date(b.endISO)}));
+  if(!court){
+    const listEl = $("#slotList");
+    if(listEl) listEl.innerHTML = `<p class="text-gray-500">Court configuration missing.</p>`;
+    return;
+  }
+
+  // bookings for the date (all courts)
+  const allBookingsForDate = loadBookings().filter(b => b.dateISO === dateISO);
+
+  const resourceId = court.resourceId || court.id;
+  const capacity = getResourceCapacity(resourceId);
+  const candidateUnits = (typeof court.units === 'number') ? court.units : 1;
+
   const list = $("#slotList");
   if(!list) return;
   list.innerHTML = "";
@@ -223,9 +261,22 @@ function renderSlots(){
     list.innerHTML = `<p class="text-gray-500">No slots available for this day.</p>`;
     return;
   }
+
   slots.forEach(s=>{
+    // compute occupied units on this resource for this slot
+    let occupiedUnits = 0;
+    allBookingsForDate.forEach(b=>{
+      const bStart = new Date(b.startISO);
+      const bEnd = new Date(b.endISO);
+      if(!isOverlap(s.start, s.end, bStart, bEnd)) return;
+      const bResource = getResourceIdByCourtId(b.courtId);
+      if(bResource !== resourceId) return;
+      occupiedUnits += getCourtUnitsById(b.courtId);
+    });
+
+    const disabled = (occupiedUnits + candidateUnits) > capacity;
     const price = computePrice(court, s.start);
-    const disabled = taken.some(t => isOverlap(s.start, s.end, t.start, t.end));
+
     const item = document.createElement("button");
     item.className = "w-full flex items-center justify-between border rounded-xl p-3 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed";
     item.disabled = disabled;
@@ -236,8 +287,11 @@ function renderSlots(){
   });
 }
 
+// -------------------- openBookingModal & booking flow (kept largely same) --------------------
 function openBookingModal({court, dateISO, start, end, price}){
-  $("#modal").classList.remove("hidden");
+  const modal = $("#modal");
+  if(!modal) return;
+  modal.classList.remove("hidden");
   $("#m-title").textContent = `${court.label}`;
   $("#m-when").textContent = `${dateISO} • ${pad(start.getHours())}:${pad(start.getMinutes())}–${pad(end.getHours())}:${pad(end.getMinutes())}`;
   $("#m-price").textContent = money(price);
@@ -309,7 +363,7 @@ Customer: ${booking.name}, ${booking.phone}`;
       endTime = new Date(endTime.getTime() + 7*24*60*60*1000);
     }
 
-    $("#modal").classList.add("hidden");
+    modal.classList.add("hidden");
     renderSlots();
     showConfirmation(bookings[0]);
   };
@@ -318,41 +372,41 @@ Customer: ${booking.name}, ${booking.phone}`;
 function showConfirmation(b){
   if(!b) return;
   currentShownBookingId = b.id; // remember which booking is on screen
-  $("#c-id").textContent = b.id;
-  $("#c-when").textContent = `${b.dateISO} • ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
-  $("#c-court").textContent = b.courtLabel || (state.cfg.courts.find(c=>c.id===b.courtId)?.label || "");
-  $("#c-amount").textContent = money(b.price);
-  $("#confirmCard").classList.remove("hidden");
+  const cid = $("#c-id"); if(cid) cid.textContent = b.id;
+  const cwhen = $("#c-when"); if(cwhen) cwhen.textContent = `${b.dateISO} • ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+  const ccourt = $("#c-court"); if(ccourt) ccourt.textContent = b.courtLabel || (state.cfg.courts.find(c=>c.id===b.courtId)?.label || "");
+  const camount = $("#c-amount"); if(camount) camount.textContent = money(b.price);
+  const confirmCard = $("#confirmCard");
+  if(confirmCard) confirmCard.classList.remove("hidden");
 
   // show status indicator
-  let statusEl = $("#confirmCard").querySelector(".booking-status");
-  if(!statusEl){
+  let statusEl = confirmCard && confirmCard.querySelector(".booking-status");
+  if(!statusEl && confirmCard){
     statusEl = document.createElement("div");
     statusEl.className = "mt-2 text-sm booking-status";
-    $("#confirmCard").insertBefore(statusEl, $("#confirmCard").querySelector(".mt-3"));
+    confirmCard.insertBefore(statusEl, confirmCard.querySelector(".mt-3"));
   }
   const statusText = b.status || 'pending';
-  statusEl.textContent = `Status: ${statusText}`; // pending / confirmed
-  statusEl.classList.remove('status-pending','status-confirmed');
-  statusEl.classList.add((b.status === 'confirmed') ? 'status-confirmed' : 'status-pending');
+  if(statusEl) statusEl.textContent = `Status: ${statusText}`;
+  if(statusEl) { statusEl.classList.remove('status-pending','status-confirmed'); statusEl.classList.add((b.status === 'confirmed') ? 'status-confirmed' : 'status-pending'); }
 
   // Friendly message when pending
-  let pendingNote = $("#confirmCard").querySelector(".booking-pending-note");
+  let pendingNote = confirmCard && confirmCard.querySelector(".booking-pending-note");
   if(statusText === 'pending'){
-    if(!pendingNote){
+    if(!pendingNote && confirmCard){
       pendingNote = document.createElement("div");
       pendingNote.className = "mt-2 text-sm text-gray-700 booking-pending-note";
-      // insert right below status
       statusEl.insertAdjacentElement('afterend', pendingNote);
     }
-    pendingNote.textContent = "Booking received — pending confirmation. We’ll notify you on your phone.";
+    if(pendingNote) pendingNote.textContent = "Booking received — pending confirmation. We’ll notify you on your phone.";
   } else {
     if(pendingNote) pendingNote.remove();
   }
 
   // update WA link too
-  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${$("#c-court").textContent}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${statusText}`);
-  $("#confirmWA").href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
+  const whatsappText = encodeURIComponent(`Booking Request\nName: ${b.name}\nCourt: ${$("#c-court")?.textContent || b.courtLabel}\nDate: ${b.dateISO}\nTime: ${new Date(b.startISO).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}\nAmount: ${money(b.price)}\nBooking ID: ${b.id}\nStatus: ${statusText}`);
+  const confirmWA = $("#confirmWA");
+  if(confirmWA) confirmWA.href = `https://wa.me/${state.cfg.whatsapp}?text=${whatsappText}`;
 }
 
 function closeModal(){ const modal = $("#modal"); if(modal) modal.classList.add("hidden"); }
@@ -472,23 +526,47 @@ function linkJoinWaitlist(btn, slot, court){
   });
 }
 
-// Modify renderSlots to show Join Waitlist on disabled slots
+// Modify renderSlots to show Join Waitlist on disabled slots (resource-aware)
 const _renderSlots = renderSlots;
 renderSlots = function(){
   const dateInput = $("#date");
   if(!dateInput) return;
   const dateISO = dateInput.value;
   const court = state.cfg.courts.find(c=>c.id===state.courtId);
-  const allBookings = loadBookings().filter(b=> b.courtId===court.id && b.dateISO===dateISO);
-  const taken = allBookings.map(b=>({start:new Date(b.startISO), end:new Date(b.endISO)}));
+  if(!court){
+    const listEl = $("#slotList");
+    if(listEl) listEl.innerHTML = `<p class="text-gray-500">Court configuration missing.</p>`;
+    return;
+  }
+
+  // bookings for the date (all courts)
+  const allBookingsForDate = loadBookings().filter(b => b.dateISO === dateISO);
+
+  const resourceId = court.resourceId || court.id;
+  const capacity = getResourceCapacity(resourceId);
+  const candidateUnits = (typeof court.units === 'number') ? court.units : 1;
+
   const list = $("#slotList");
   if(!list) return;
   list.innerHTML = "";
   const slots = genSlotsForDay(dateISO, court);
   if(!slots.length){ list.innerHTML = `<p class="text-gray-500">No slots available for this day.</p>`; return; }
+
   slots.forEach(s=>{
+    // compute occupied units for overlaps on the same resource
+    let occupiedUnits = 0;
+    allBookingsForDate.forEach(b=>{
+      const bStart = new Date(b.startISO);
+      const bEnd = new Date(b.endISO);
+      if(!isOverlap(s.start, s.end, bStart, bEnd)) return;
+      const bResource = getResourceIdByCourtId(b.courtId);
+      if(bResource !== resourceId) return;
+      occupiedUnits += getCourtUnitsById(b.courtId);
+    });
+
+    const disabled = (occupiedUnits + candidateUnits) > capacity;
     const price = computePrice(court, s.start);
-    const disabled = taken.some(t => isOverlap(s.start, s.end, t.start, t.end));
+
     const item = document.createElement("div");
     item.className = "w-full flex items-center justify-between border rounded-xl p-3 gap-3";
     const time = `${pad(s.start.getHours())}:${pad(s.start.getMinutes())}–${pad(s.end.getHours())}:${pad(s.end.getMinutes())}`;
