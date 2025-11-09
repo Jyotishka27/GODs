@@ -8,26 +8,13 @@
     "lat": 22.594,
     "lng": 88.479
   },
-  "courts": [
-    {
-      "id": "7A",
-      "label": "Half Ground Football",
-      "basePrice": 1500,
-      "durationMins": 60
-    },
-    {
-      "id": "5A",
-      "label": "Full Ground Football",
-      "basePrice": 2500,
-      "durationMins": 60
-    },
-    {
-      "id": "CRK",
-      "label": "Cricket (Full Ground)",
-      "basePrice": 2500,
-      "durationMins": 60
-    }
+   "courts": [
+    { "id": "5A",  "label": "Half Ground Football", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
+    { "id": "5A-B","label": "Half Ground Football (other half)", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
+    { "id": "7A",  "label": "Full Ground Football", "durationMins": 60, "basePrice": 2500,  "resourceId": "main-pitch", "units": 2 },
+    { "id": "CRK", "label": "Cricket", "durationMins": 60, "basePrice": 2500, "resourceId": "main-pitch", "units": 2 }
   ],
+  
   "hours": {
     "open": 6,
     "close": 23
