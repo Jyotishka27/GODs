@@ -13,6 +13,42 @@ const state = {
   cart: [],
 };
 
+// Notifications & admin message store
+const notificationsKey = "turf_notifications_v1";
+
+function loadNotifications(){ try { return JSON.parse(localStorage.getItem(notificationsKey)||"[]"); } catch(e){ return []; } }
+function saveNotifications(rows){ localStorage.setItem(notificationsKey, JSON.stringify(rows)); }
+
+// Simple add-notification helper (for admin UI)
+function pushAdminNotification({type, title, body, bookingId}){
+  const rows = loadNotifications();
+  rows.unshift({ id: uuid(), type, title, body, bookingId, read:false, createdAt:new Date().toISOString() });
+  // keep last 200
+  localStorage.setItem(notificationsKey, JSON.stringify(rows.slice(0,200)));
+}
+
+// Pluggable SMS sender. Configure state.cfg.sms in data/site.json with endpoint/key if you want automated SMS.
+async function sendSMS(to, message){
+  // If configured, try a serverless endpoint (recommended)
+  if(state.cfg?.sms?.enabled && state.cfg.sms.endpoint){
+    try{
+      await fetch(state.cfg.sms.endpoint, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', ...(state.cfg.sms.authHeader ? { Authorization: state.cfg.sms.authHeader } : {})},
+        body: JSON.stringify({ to, message })
+      });
+      return true;
+    }catch(e){
+      console.warn('SMS send failed', e);
+      // fallback to storing admin notification
+    }
+  }
+  // fallback: no SMS provider configured — log & push to admin notifications
+  console.log('SMS disabled or endpoint missing — message to', to, message);
+  pushAdminNotification({ type: 'sms-mock', title: `SMS to ${to}`, body: message, bookingId: null });
+  return false;
+}
+
 function fmtDateISO(d){ return d.toISOString().split('T')[0]; }
 function pad(n){ return String(n).padStart(2,'0'); }
 function toIST(d){
