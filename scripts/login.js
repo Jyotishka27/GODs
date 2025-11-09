@@ -6,7 +6,7 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
 
     // Hardcoded credentials (change as needed)
     const ADMIN_USER = "admin";
-    const ADMIN_PASS = "weare11";
+    const ADMIN_PASS = "gods";
 
     if (username === ADMIN_USER && password === ADMIN_PASS) {
         localStorage.setItem("isAdmin", "true");
