@@ -239,7 +239,7 @@ mConfirm?.addEventListener("click", async () => {
 
   try {
     const ref = await addDoc(collection(db, "bookings"), booking);
-
+    console.log("BOOKING WRITE SUCCESS:", ref.id);
     // show confirm card
     if (cid) cid.textContent = ref.id;
     if (cwhen) cwhen.textContent = niceWhen(selectedDate, selectedSlot.label);
