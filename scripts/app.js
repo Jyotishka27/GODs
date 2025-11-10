@@ -1,4 +1,4 @@
-// scripts/app.js (ready-to-drop replacement)
+// scripts/app.js (updated ready-to-drop)
 // ES module for browser — Firestore-only, no auth/admin
 // Uses Firebase v12.5.0 CDN
 //
@@ -6,6 +6,7 @@
 // - batch-fetches wishlists for selected date+court to show counts
 // - storageBucket corrected, orderBy removed to avoid composite index issue
 // - visible error toasts and improved error messages
+// - fixes: no invalid reassignment of `modal`; consistent slot id/label hyphen; debug logs
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -16,7 +17,6 @@ import {
   getDocs,
   addDoc,
   serverTimestamp
-  // orderBy, // <-- don't use unless you create the composite index in Firestore console
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 /* ---------- Firebase config ---------- */
@@ -84,7 +84,8 @@ function generateSlots() {
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     const start = `${String(h).padStart(2, "0")}:00`;
     const end = `${String(h + 1).padStart(2, "0")}:00`;
-    slots.push({ id: `${start}-${end}`, label: `${start}–${end}`, startHour: h });
+    // use same hyphen in id and label to avoid subtle mismatches
+    slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
 }
@@ -123,8 +124,8 @@ let selectedAmount = 0;
 
 // modal modes: "booking" or "wishlist"
 let modalMode = "booking";
-// when wishlist is opened from an occupied slot, store the preferredBookingId
-modal = modal || {}; // defensive
+// store preferred booking id when opening wishlist (no reassign to modal element)
+let preferredBookingId = null;
 
 /* ---------- set defaults & populate static UI ---------- */
 if (dateInput) dateInput.value = fmtDateISO(new Date());
@@ -203,7 +204,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- Slot rendering ---------- */
+/* ---------- Slot rendering (debug-enabled) ---------- */
 async function renderSlots() {
   if (!slotList) return;
   slotList.innerHTML = "";
@@ -214,18 +215,33 @@ async function renderSlots() {
   }
 
   // fetch bookings + wishlists once (batched)
-  const [bookings, wishlists] = await Promise.all([
-    fetchBookingsFor(selectedDate, selectedCourt),
-    fetchWishlistsFor(selectedDate, selectedCourt)
-  ]);
+  let bookings = [], wishlists = [];
+  try {
+    [bookings, wishlists] = await Promise.all([
+      fetchBookingsFor(selectedDate, selectedCourt),
+      fetchWishlistsFor(selectedDate, selectedCourt)
+    ]);
+  } catch (e) {
+    console.error("Error fetching bookings/wishlists:", e);
+    toast("Error fetching bookings/wishlists — check console", { error: true, duration: 8000 });
+  }
 
-  const occupied = new Set(bookings.filter(b => b.status !== "cancelled").map(b => b.slotId));
+  // DEBUG logging
+  console.log("renderSlots - selectedDate:", selectedDate, "selectedCourt:", selectedCourt);
+  console.log("bookings fetched:", bookings);
+  console.log("wishlists fetched:", wishlists);
+
+  const occupied = new Set(bookings.filter(b => b && b.status !== "cancelled").map(b => b.slotId));
+  console.log("occupied slotIds:", Array.from(occupied));
+
   // build wishlists map: slotId -> array of wishlist entries
   const wishlistMap = wishlists.reduce((acc, w) => {
+    if (!w || !w.slotId) return acc;
     if (!acc[w.slotId]) acc[w.slotId] = [];
     acc[w.slotId].push(w);
     return acc;
   }, {});
+  console.log("wishlistMap:", wishlistMap);
 
   ALL_SLOTS.forEach(s => {
     const item = document.createElement("div");
@@ -255,8 +271,9 @@ async function renderSlots() {
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
-        // pass preferred booking id so admin can correlate later
-        openWishlistModal(s, occ?._id ?? null);
+        // store preferred booking id for write
+        preferredBookingId = occ?._id ?? null;
+        openWishlistModal(s, preferredBookingId);
       });
       right.appendChild(wishBtn);
 
@@ -292,11 +309,12 @@ function openBookingModal(slot) {
   if (mWhen) mWhen.textContent = niceWhen(selectedDate, slot.label);
   if (mPrice) mPrice.textContent = `₹${selectedAmount}`;
   if (mConfirm) mConfirm.textContent = "Confirm";
+  preferredBookingId = null;
   resetModalFields();
   openModal();
 }
 
-function openWishlistModal(slot, preferredBookingId = null) {
+function openWishlistModal(slot, prefBookingId = null) {
   modalMode = "wishlist";
   selectedSlot = slot;
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -304,9 +322,8 @@ function openWishlistModal(slot, preferredBookingId = null) {
   if (mWhen) mWhen.textContent = niceWhen(selectedDate, slot.label);
   if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
   if (mConfirm) mConfirm.textContent = "Save to Wishlist";
+  preferredBookingId = prefBookingId || null;
   resetModalFields();
-  // store for use when writing wishlist doc
-  modal.preferredBookingId = preferredBookingId || null;
   openModal();
 }
 
@@ -391,7 +408,7 @@ mConfirm?.addEventListener("click", async () => {
       slotId: selectedSlot.id,
       slotLabel: selectedSlot.label,
       date: selectedDate,
-      preferredBookingId: modal?.preferredBookingId || null,
+      preferredBookingId: preferredBookingId || null,
       status: "open", // open / contacted / converted / expired
       createdAt: serverTimestamp()
     };
