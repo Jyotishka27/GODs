@@ -1,14 +1,12 @@
-// scripts/app.js
+// scripts/app.js (ready-to-drop replacement)
 // ES module for browser — Firestore-only, no auth/admin
 // Uses Firebase v12.5.0 CDN
 //
-// Features:
-// - initialize Firebase (re-uses existing app if present)
-// - render slots for chosen date + court
-// - open modal to collect name/phone and create booking in Firestore
-// - show confirm card with WhatsApp prefilled message
-// Notes:
-// - No auth, no admin UI, no analytics, no secrets
+// Changes made:
+// - storageBucket fixed to "gods-turf.appspot.com"
+// - removed orderBy to avoid composite-index requirement (commented where to re-add)
+// - added visible error toasts and better error messages on write failure
+// - defensive guards and small UX improvements
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -18,8 +16,8 @@ import {
   where,
   getDocs,
   addDoc,
-  serverTimestamp,
-  orderBy,
+  serverTimestamp
+  // orderBy, // <-- if you need ordering by createdAt, uncomment and create a composite index in Firestore console
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
 /* ---------- Firebase config (use your project's values) ---------- */
@@ -27,7 +25,8 @@ const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
   projectId: "gods-turf",
-  storageBucket: "gods-turf.firebasestorage.app",
+  // corrected common bucket form — optional but conventional
+  storageBucket: "gods-turf.appspot.com",
   messagingSenderId: "46992157689",
   appId: "1:46992157689:web:b547bc847c7a0331bb2b28"
 };
@@ -37,10 +36,34 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
 /* ---------- Utility functions ---------- */
-const $ = (sel, el = document) => el.querySelector(sel);
-const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+const $ = (sel, el = document) => (el || document).querySelector(sel);
+const $$ = (sel, el = document) => Array.from((el || document).querySelectorAll(sel));
 const show = el => el?.classList.remove("hidden");
 const hide = el => el?.classList.add("hidden");
+
+function toast(msg, opts = {}) {
+  try {
+    const t = document.createElement("div");
+    t.textContent = msg;
+    t.style = `
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      max-width: 320px;
+      background: ${opts.error ? "#fee2e2" : "#ecfdf5"};
+      color: ${opts.error ? "#991b1b" : "#064e3b"};
+      border-radius: 8px;
+      padding: 10px 12px;
+      box-shadow: 0 6px 18px rgba(2,6,23,0.08);
+      font-size: 13px;
+      z-index: 99999;
+    `;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), opts.duration || 6000);
+  } catch (e) {
+    console.warn("toast failed", e);
+  }
+}
 
 function fmtDateISO(d) {
   const y = d.getFullYear();
@@ -102,8 +125,8 @@ let selectedDate = null;
 let selectedAmount = 0;
 
 /* ---------- UI helpers ---------- */
-function openModal() { modal.classList.remove("hidden"); }
-function closeModalFn() { modal.classList.add("hidden"); resetModalFields(); }
+function openModal() { modal?.classList.remove("hidden"); }
+function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
 function resetModalFields() {
   if (mName) mName.value = "";
   if (mPhone) mPhone.value = "";
@@ -145,11 +168,14 @@ if (dateInput) dateInput.value = fmtDateISO(new Date());
 async function fetchBookingsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
+    // NOTE: removed orderBy("createdAt") to avoid composite-index requirement.
+    // If you *do* need ordering by createdAt, re-add orderBy and create the index
+    // from the Firestore console error link.
     const q = query(
       collection(db, "bookings"),
       where("date", "==", dateISO),
-      where("court", "==", courtId),
-      orderBy("createdAt", "asc")
+      where("court", "==", courtId)
+      // orderBy("createdAt", "asc") // <-- uncomment only after creating the composite index
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -161,6 +187,7 @@ async function fetchBookingsFor(dateISO, courtId) {
     return docs;
   } catch (err) {
     console.error("fetchBookingsFor err", err);
+    toast("Firestore error: " + (err?.message || err), { error: true, duration: 8000 });
     return [];
   }
 }
@@ -220,8 +247,9 @@ mConfirm?.addEventListener("click", async () => {
   const coupon = mCoupon?.value?.trim();
   const notes = mNotes?.value?.trim();
 
-  if (!name) return alert("Please enter your name.");
-  if (!phone || !/^\+?\d{8,15}$/.test(phone)) return alert("Enter phone with country code, e.g. +91...");
+  if (!name) { return alert("Please enter your name."); }
+  if (!phone || !/^\+?\d{8,15}$/.test(phone)) { return alert("Enter phone with country code, e.g. +91..."); }
+  if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
 
   const booking = {
     userName: name,
@@ -258,15 +286,17 @@ mConfirm?.addEventListener("click", async () => {
     show(confirmCard);
     closeModalFn();
 
+    toast("Booking successful — check confirmation card.", { duration: 5000 });
+
     // re-render so slot shows as occupied
     renderSlots();
 
   } catch (err) {
     console.group("Booking write FAILED");
     console.error(err);
-    try { console.error("err.code:", err.code); } catch(e){}
-    try { console.error("err.message:", err.message); } catch(e){}
-    alert("Booking failed — check console for details.");
+    const emsg = err?.message || String(err);
+    toast("Booking failed: " + emsg, { error: true, duration: 8000 });
+    alert("Booking failed — check console. Error: " + emsg);
     console.groupEnd();
   }
 });
