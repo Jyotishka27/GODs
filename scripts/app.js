@@ -2,11 +2,10 @@
 // ES module for browser — Firestore-only, no auth/admin
 // Uses Firebase v12.5.0 CDN
 //
-// Changes made:
-// - storageBucket fixed to "gods-turf.appspot.com"
-// - removed orderBy to avoid composite-index requirement (commented where to re-add)
-// - added visible error toasts and better error messages on write failure
-// - defensive guards and small UX improvements
+// - uses top-level `wishlists` collection
+// - batch-fetches wishlists for selected date+court to show counts
+// - storageBucket corrected, orderBy removed to avoid composite index issue
+// - visible error toasts and improved error messages
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -17,21 +16,19 @@ import {
   getDocs,
   addDoc,
   serverTimestamp
-  // orderBy, // <-- if you need ordering by createdAt, uncomment and create a composite index in Firestore console
+  // orderBy, // <-- don't use unless you create the composite index in Firestore console
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-/* ---------- Firebase config (use your project's values) ---------- */
+/* ---------- Firebase config ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
   projectId: "gods-turf",
-  // corrected common bucket form — optional but conventional
   storageBucket: "gods-turf.appspot.com",
   messagingSenderId: "46992157689",
   appId: "1:46992157689:web:b547bc847c7a0331bb2b28"
 };
 
-// init or reuse
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
@@ -49,7 +46,7 @@ function toast(msg, opts = {}) {
       position: fixed;
       right: 12px;
       bottom: 12px;
-      max-width: 320px;
+      max-width: 360px;
       background: ${opts.error ? "#fee2e2" : "#ecfdf5"};
       color: ${opts.error ? "#991b1b" : "#064e3b"};
       border-radius: 8px;
@@ -77,10 +74,10 @@ function niceWhen(dateStr, slotLabel) {
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-/* ---------- Slot generation (simple hourly slots) ---------- */
-const OPEN_HOUR = 6;   // 6:00
-const CLOSE_HOUR = 23; // 23:00 (last slot 22:00-23:00)
-const BUFFER_MIN = 10; // informational only
+/* ---------- Slot generation ---------- */
+const OPEN_HOUR = 6;
+const CLOSE_HOUR = 23;
+const BUFFER_MIN = 10;
 
 function generateSlots() {
   const slots = [];
@@ -93,7 +90,7 @@ function generateSlots() {
 }
 const ALL_SLOTS = generateSlots();
 
-/* ---------- Price mapping ---------- */
+/* ---------- Prices ---------- */
 const PRICE_BY_COURT = { "5A": 600, "7A": 900, "CRK": 1500 };
 
 /* ---------- DOM refs ---------- */
@@ -124,21 +121,14 @@ let selectedSlot = null;
 let selectedDate = null;
 let selectedAmount = 0;
 
-/* ---------- UI helpers ---------- */
-function openModal() { modal?.classList.remove("hidden"); }
-function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
-function resetModalFields() {
-  if (mName) mName.value = "";
-  if (mPhone) mPhone.value = "";
-  if (mCoupon) mCoupon.value = "";
-  if (mNotes) mNotes.value = "";
-  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
-}
+// modal modes: "booking" or "wishlist"
+let modalMode = "booking";
+// when wishlist is opened from an occupied slot, store the preferredBookingId
+modal = modal || {}; // defensive
 
-/* ---------- set default date ---------- */
+/* ---------- set defaults & populate static UI ---------- */
 if (dateInput) dateInput.value = fmtDateISO(new Date());
 
-/* ---------- populate static UI bits ---------- */
 (function populateStatic() {
   const am = $("#amenities");
   if (am) {
@@ -168,14 +158,11 @@ if (dateInput) dateInput.value = fmtDateISO(new Date());
 async function fetchBookingsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
-    // NOTE: removed orderBy("createdAt") to avoid composite-index requirement.
-    // If you *do* need ordering by createdAt, re-add orderBy and create the index
-    // from the Firestore console error link.
     const q = query(
       collection(db, "bookings"),
       where("date", "==", dateISO),
       where("court", "==", courtId)
-      // orderBy("createdAt", "asc") // <-- uncomment only after creating the composite index
+      // orderBy("createdAt", "asc") // uncomment only after creating composite index in Firebase console
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -192,6 +179,30 @@ async function fetchBookingsFor(dateISO, courtId) {
   }
 }
 
+// NEW: fetch wishlist entries for the given date + court (returns array)
+async function fetchWishlistsFor(dateISO, courtId) {
+  if (!dateISO || !courtId) return [];
+  try {
+    const q = query(
+      collection(db, "wishlists"),
+      where("date", "==", dateISO),
+      where("court", "==", courtId)
+    );
+    const snap = await getDocs(q);
+    const docs = [];
+    snap.forEach(d => {
+      const data = d.data();
+      data._id = d.id;
+      docs.push(data);
+    });
+    return docs;
+  } catch (err) {
+    console.error("fetchWishlistsFor err", err);
+    toast("Firestore error (wishlists): " + (err?.message || err), { error: true, duration: 8000 });
+    return [];
+  }
+}
+
 /* ---------- Slot rendering ---------- */
 async function renderSlots() {
   if (!slotList) return;
@@ -202,8 +213,19 @@ async function renderSlots() {
     return;
   }
 
-  const bookings = await fetchBookingsFor(selectedDate, selectedCourt);
+  // fetch bookings + wishlists once (batched)
+  const [bookings, wishlists] = await Promise.all([
+    fetchBookingsFor(selectedDate, selectedCourt),
+    fetchWishlistsFor(selectedDate, selectedCourt)
+  ]);
+
   const occupied = new Set(bookings.filter(b => b.status !== "cancelled").map(b => b.slotId));
+  // build wishlists map: slotId -> array of wishlist entries
+  const wishlistMap = wishlists.reduce((acc, w) => {
+    if (!acc[w.slotId]) acc[w.slotId] = [];
+    acc[w.slotId].push(w);
+    return acc;
+  }, {});
 
   ALL_SLOTS.forEach(s => {
     const item = document.createElement("div");
@@ -211,16 +233,50 @@ async function renderSlots() {
     const left = document.createElement("div");
     left.innerHTML = `<div class="font-medium">${s.label}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
     const right = document.createElement("div");
+
     if (occupied.has(s.id)) {
       const occ = bookings.find(b => b.slotId === s.id);
-      right.innerHTML = `<div class="text-sm text-red-600">Booked</div><div class="text-xs text-gray-500">by ${occ?.userName ?? "—"}</div>`;
+      right.innerHTML = `
+        <div class="text-sm text-red-600">Booked</div>
+        <div class="text-xs text-gray-500">by ${occ?.userName ?? "—"}</div>
+      `;
+
+      // wishlist count badge & button
+      const count = (wishlistMap[s.id] || []).length;
+      if (count > 0) {
+        const badge = document.createElement("span");
+        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.textContent = `Wishlist · ${count}`;
+        right.appendChild(badge);
+      }
+
+      const wishBtn = document.createElement("button");
+      wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+      wishBtn.textContent = "Wishlist";
+      wishBtn.title = "Add yourself to wishlist for this slot";
+      wishBtn.addEventListener("click", () => {
+        // pass preferred booking id so admin can correlate later
+        openWishlistModal(s, occ?._id ?? null);
+      });
+      right.appendChild(wishBtn);
+
     } else {
       const btn = document.createElement("button");
       btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
       btn.textContent = "Book";
       btn.addEventListener("click", () => openBookingModal(s));
       right.appendChild(btn);
+
+      // also show wishlist interest if any (user may want wishlist for open slot too)
+      const count = (wishlistMap[s.id] || []).length;
+      if (count > 0) {
+        const badge = document.createElement("span");
+        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.textContent = `Wishlist · ${count}`;
+        right.appendChild(badge);
+      }
     }
+
     item.appendChild(left);
     item.appendChild(right);
     slotList.appendChild(item);
@@ -229,18 +285,45 @@ async function renderSlots() {
 
 /* ---------- Modal flow ---------- */
 function openBookingModal(slot) {
+  modalMode = "booking";
   selectedSlot = slot;
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
   if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${slot.label}`;
   if (mWhen) mWhen.textContent = niceWhen(selectedDate, slot.label);
   if (mPrice) mPrice.textContent = `₹${selectedAmount}`;
+  if (mConfirm) mConfirm.textContent = "Confirm";
+  resetModalFields();
   openModal();
+}
+
+function openWishlistModal(slot, preferredBookingId = null) {
+  modalMode = "wishlist";
+  selectedSlot = slot;
+  selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+  if (mTitle) mTitle.textContent = `Wishlist — ${selectedCourt} · ${slot.label}`;
+  if (mWhen) mWhen.textContent = niceWhen(selectedDate, slot.label);
+  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
+  if (mConfirm) mConfirm.textContent = "Save to Wishlist";
+  resetModalFields();
+  // store for use when writing wishlist doc
+  modal.preferredBookingId = preferredBookingId || null;
+  openModal();
+}
+
+function openModal() { modal?.classList.remove("hidden"); }
+function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
+function resetModalFields() {
+  if (mName) mName.value = "";
+  if (mPhone) mPhone.value = "";
+  if (mCoupon) mCoupon.value = "";
+  if (mNotes) mNotes.value = "";
+  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
 }
 
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* Confirm booking: write to Firestore (no localStorage fallback) */
+/* ---------- Confirm handler (booking + wishlist) ---------- */
 mConfirm?.addEventListener("click", async () => {
   const name = mName?.value?.trim();
   const phone = mPhone?.value?.trim();
@@ -251,53 +334,80 @@ mConfirm?.addEventListener("click", async () => {
   if (!phone || !/^\+?\d{8,15}$/.test(phone)) { return alert("Enter phone with country code, e.g. +91..."); }
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
 
-  const booking = {
-    userName: name,
-    phone,
-    coupon: coupon || null,
-    notes: notes || null,
-    court: selectedCourt,
-    slotId: selectedSlot.id,
-    slotLabel: selectedSlot.label,
-    date: selectedDate,
-    amount: selectedAmount,
-    status: "pending",
-    createdAt: serverTimestamp()
-  };
+  if (modalMode === "booking") {
+    const booking = {
+      userName: name,
+      phone,
+      coupon: coupon || null,
+      notes: notes || null,
+      court: selectedCourt,
+      slotId: selectedSlot.id,
+      slotLabel: selectedSlot.label,
+      date: selectedDate,
+      amount: selectedAmount,
+      status: "pending",
+      createdAt: serverTimestamp()
+    };
 
-  try {
-    console.group("Booking write start (Firestore)");
-    console.log("Booking object:", booking);
+    try {
+      console.group("Booking write start (Firestore)");
+      console.log("Booking object:", booking);
+      const ref = await addDoc(collection(db, "bookings"), booking);
+      console.log("BOOKING WRITE SUCCESS:", ref.id);
+      console.groupEnd();
 
-    // write to Firestore
-    const ref = await addDoc(collection(db, "bookings"), booking);
+      if (cid) cid.textContent = ref.id;
+      if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
+      if (ccourt) ccourt.textContent = (selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
+      if (camount) camount.textContent = `₹${selectedAmount}`;
+      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
+      if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
 
-    console.log("BOOKING WRITE SUCCESS:", ref.id);
-    console.groupEnd();
+      show(confirmCard);
+      closeModalFn();
+      toast("Booking successful — check confirmation card.", { duration: 5000 });
 
-    // update UI (confirm card)
-    if (cid) cid.textContent = ref.id;
-    if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
-    if (ccourt) ccourt.textContent = (selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
-    if (camount) camount.textContent = `₹${selectedAmount}`;
-    const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
-    if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
+      renderSlots();
 
-    show(confirmCard);
-    closeModalFn();
+    } catch (err) {
+      console.group("Booking write FAILED");
+      console.error(err);
+      const emsg = err?.message || String(err);
+      toast("Booking failed: " + emsg, { error: true, duration: 8000 });
+      alert("Booking failed — check console. Error: " + emsg);
+      console.groupEnd();
+    }
+    return;
+  }
 
-    toast("Booking successful — check confirmation card.", { duration: 5000 });
+  // wishlist mode
+  if (modalMode === "wishlist") {
+    const wishlistEntry = {
+      userName: name,
+      phone,
+      notes: notes || null,
+      coupon: coupon || null,
+      court: selectedCourt,
+      slotId: selectedSlot.id,
+      slotLabel: selectedSlot.label,
+      date: selectedDate,
+      preferredBookingId: modal?.preferredBookingId || null,
+      status: "open", // open / contacted / converted / expired
+      createdAt: serverTimestamp()
+    };
 
-    // re-render so slot shows as occupied
-    renderSlots();
-
-  } catch (err) {
-    console.group("Booking write FAILED");
-    console.error(err);
-    const emsg = err?.message || String(err);
-    toast("Booking failed: " + emsg, { error: true, duration: 8000 });
-    alert("Booking failed — check console. Error: " + emsg);
-    console.groupEnd();
+    try {
+      const ref = await addDoc(collection(db, "wishlists"), wishlistEntry);
+      toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
+      closeModalFn();
+      renderSlots();
+    } catch (err) {
+      console.error("Wishlist save failed", err);
+      const emsg = err?.message || String(err);
+      toast("Wishlist save failed: " + emsg, { error: true, duration: 8000 });
+      alert("Wishlist save failed — check console. Error: " + emsg);
+    }
+    return;
   }
 });
 
@@ -305,7 +415,7 @@ mConfirm?.addEventListener("click", async () => {
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 courtPicker?.addEventListener("click", ()=> hide(confirmCard));
 
-/* ---------- court selection handlers ---------- */
+/* ---------- court selection ---------- */
 courtPicker?.addEventListener("click", (ev) => {
   const btn = ev.target.closest("button[data-id]");
   if (!btn) return;
