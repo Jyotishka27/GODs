@@ -294,40 +294,6 @@ mConfirm.addEventListener("click", async () => {
 dateInput.addEventListener("change", ()=> hide(confirmCard));
 courtPicker.addEventListener("click", ()=> hide(confirmCard));
 
-// ---------- Simple admin helpers (client-side fallback) ----------
-async function checkIfAdmin(user) {
-  // Preferred: check custom claim. Fallback: admins collection document
-  try {
-    const tokenRes = await getIdTokenResult(user, /* forceRefresh */ false);
-    if (tokenRes?.claims?.admin) return true;
-  } catch (e) { /* ignore */ }
-
-  // fallback: check admins collection
-  try {
-    const adminDocRef = doc(db, "admins", user.uid);
-    const snap = await getDocs(query(collection(db, "admins"), where("__name__", "==", user.uid)));
-    // if there is a doc with uid it's an admin
-    return snap.size > 0;
-  } catch (err) {
-    console.warn("admin fallback check failed", err);
-    return false;
-  }
-}
-
-onAuthStateChanged(auth, async user => {
-  if (!user) {
-    // not signed in - nothing special for booking creation
-    return;
-  }
-  const isAdmin = await checkIfAdmin(user).catch(()=>false);
-  if (isAdmin) {
-    // you could enable admin UI here (e.g., show bookings list and status change buttons)
-    console.log("Admin signed in:", user.uid);
-  } else {
-    console.log("Signed in user (not admin)", user.uid);
-  }
-});
-
 // ---------- small UX: auto-render initial slots on load ----------
 window.addEventListener("load", () => {
   // preselect first court button visually if none selected
