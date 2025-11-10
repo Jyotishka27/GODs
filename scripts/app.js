@@ -1,6 +1,9 @@
-// scripts/app.js (updated ready-to-drop)
-// Prevent duplicate bookings by pre-checking Firestore for same date+court+slotId
-// Keeps wishlist support and improved error toasts/logging
+// scripts/app.js (final ready-to-drop)
+// Booking + Wishlist front-end using Firestore (no auth)
+// - Shows "Booked" (no username) + Wishlist button for occupied slots
+// - Prevents duplicate bookings via pre-check
+// - Stores wishlists in top-level `wishlists` collection
+// - Includes helpful toasts and debug logs
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -78,7 +81,7 @@ function generateSlots() {
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     const start = `${String(h).padStart(2, "0")}:00`;
     const end = `${String(h + 1).padStart(2, "0")}:00`;
-    // keep hyphen consistent in id/label
+    // hyphen used consistently in id/label
     slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
@@ -116,8 +119,8 @@ let selectedSlot = null;
 let selectedDate = null;
 let selectedAmount = 0;
 
-let modalMode = "booking";
-let preferredBookingId = null;
+let modalMode = "booking";         // "booking" or "wishlist"
+let preferredBookingId = null;     // used when saving wishlist from an occupied slot
 
 /* ---------- set defaults & populate static UI ---------- */
 if (dateInput) dateInput.value = fmtDateISO(new Date());
@@ -155,7 +158,6 @@ async function fetchBookingsFor(dateISO, courtId) {
       collection(db, "bookings"),
       where("date", "==", dateISO),
       where("court", "==", courtId)
-      // no orderBy to avoid composite index requirement here
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -195,7 +197,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- Slot rendering (debug-enabled) ---------- */
+/* ---------- Slot rendering (shows Booked + Wishlist button, no username) ---------- */
 async function renderSlots() {
   if (!slotList) return;
   slotList.innerHTML = "";
@@ -216,6 +218,7 @@ async function renderSlots() {
     toast("Error fetching bookings/wishlists — check console", { error: true, duration: 8000 });
   }
 
+  // debug logs
   console.log("renderSlots - selectedDate:", selectedDate, "selectedCourt:", selectedCourt);
   console.log("bookings fetched:", bookings);
   console.log("wishlists fetched:", wishlists);
@@ -239,11 +242,8 @@ async function renderSlots() {
     const right = document.createElement("div");
 
     if (occupied.has(s.id)) {
-      const occ = bookings.find(b => b.slotId === s.id);
-      right.innerHTML = `
-        <div class="text-sm text-red-600">Booked</div>
-        <div class="text-xs text-gray-500">by ${occ?.userName ?? "—"}</div>
-      `;
+      // Show only "Booked" + Wishlist button (no username)
+      right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
 
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
@@ -258,6 +258,8 @@ async function renderSlots() {
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
+        // prefer correlate to first booking id for this slot (if any)
+        const occ = bookings.find(b => b.slotId === s.id);
         preferredBookingId = occ?._id ?? null;
         openWishlistModal(s, preferredBookingId);
       });
@@ -352,7 +354,7 @@ mConfirm?.addEventListener("click", async () => {
     };
 
     try {
-      // PRE-CHECK: ensure there is no active booking for this exact slot
+      // PRE-CHECK: check for existing active booking for this exact slot
       try {
         const conflictQ = query(
           collection(db, "bookings"),
@@ -367,15 +369,12 @@ mConfirm?.addEventListener("click", async () => {
           data._id = d.id;
           existing.push(data);
         });
-        // if any existing booking with status != cancelled -> conflict
         const conflict = existing.find(b => b && b.status !== "cancelled");
         if (conflict) {
-          const who = conflict.userName ? ` by ${conflict.userName}` : "";
-          alert(`Sorry — that slot is already booked${who}. Please choose another slot or add yourself to the wishlist.`);
+          alert("Sorry — that slot is already booked. Please choose another slot or add yourself to the wishlist.");
           return;
         }
       } catch (qerr) {
-        // if query fails due to missing index, surface useful info
         console.error("Conflict-check failed", qerr);
         const qmsg = qerr?.message || String(qerr);
         if (qmsg.includes("requires an index")) {
@@ -383,11 +382,10 @@ mConfirm?.addEventListener("click", async () => {
         } else {
           toast("Could not verify slot availability — try again.", { error: true, duration: 8000 });
         }
-        // continue (we could block, but better to avoid false positives) — here we'll abort to be safe
         return;
       }
 
-      // No conflict — proceed to write
+      // No conflict — proceed to write booking
       console.group("Booking write start (Firestore)");
       console.log("Booking object:", booking);
       const ref = await addDoc(collection(db, "bookings"), booking);
