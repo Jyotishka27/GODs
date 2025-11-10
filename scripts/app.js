@@ -213,7 +213,7 @@ function openBookingModal(slot) {
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* ---------- confirm booking: writes to Firestore ---------- */
+/* Confirm booking: write to Firestore (no localStorage fallback) */
 mConfirm?.addEventListener("click", async () => {
   const name = mName?.value?.trim();
   const phone = mPhone?.value?.trim();
@@ -238,12 +238,19 @@ mConfirm?.addEventListener("click", async () => {
   };
 
   try {
+    console.group("Booking write start (Firestore)");
+    console.log("Booking object:", booking);
+
+    // write to Firestore
     const ref = await addDoc(collection(db, "bookings"), booking);
+
     console.log("BOOKING WRITE SUCCESS:", ref.id);
-    // show confirm card
+    console.groupEnd();
+
+    // update UI (confirm card)
     if (cid) cid.textContent = ref.id;
-    if (cwhen) cwhen.textContent = niceWhen(selectedDate, selectedSlot.label);
-    if (ccourt) ccourt.textContent = selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)";
+    if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
+    if (ccourt) ccourt.textContent = (selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
     if (camount) camount.textContent = `₹${selectedAmount}`;
     const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
     if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
@@ -251,11 +258,16 @@ mConfirm?.addEventListener("click", async () => {
     show(confirmCard);
     closeModalFn();
 
-    // Re-render slots so booked slot shows as occupied
+    // re-render so slot shows as occupied
     renderSlots();
+
   } catch (err) {
-    console.error("create booking error", err);
-    alert("Could not create booking. Try again.");
+    console.group("Booking write FAILED");
+    console.error(err);
+    try { console.error("err.code:", err.code); } catch(e){}
+    try { console.error("err.message:", err.message); } catch(e){}
+    alert("Booking failed — check console for details.");
+    console.groupEnd();
   }
 });
 
