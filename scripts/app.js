@@ -1,14 +1,14 @@
 // scripts/app.js
-// ES module version for browser. Uses Firebase v12.5.0 CDN.
+// ES module for browser — Firestore-only, no auth/admin
+// Uses Firebase v12.5.0 CDN
+//
 // Features:
 // - initialize Firebase (re-uses existing app if present)
 // - render slots for chosen date + court
 // - open modal to collect name/phone and create booking in Firestore
 // - show confirm card with WhatsApp prefilled message
-// - admin claim fallback via 'admins' collection (for protecting admin UI; not used for bookings creation)
 // Notes:
-// - Keep Twilio/WhatsApp sending on server (Cloud Function or Extension).
-// - This file assumes your index.html's top module initialized firebase OR not — it will reuse app if already initialized.
+// - No auth, no admin UI, no analytics, no secrets
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -19,59 +19,42 @@ import {
   getDocs,
   addDoc,
   serverTimestamp,
-  doc,
-  updateDoc,
   orderBy,
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  getIdTokenResult,
-} from "https://www.gstatic.com/firebasejs/12.5.0/firebase-auth.js";
 
-// ---------- Firebase config (same as your page) ----------
+/* ---------- Firebase config (use your project's values) ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
   projectId: "gods-turf",
   storageBucket: "gods-turf.firebasestorage.app",
   messagingSenderId: "46992157689",
-  appId: "1:46992157689:web:b547bc847c7a0331bb2b28",
-  measurementId: "G-53RGL9JTLQ"
+  appId: "1:46992157689:web:b547bc847c7a0331bb2b28"
 };
 
-// initialize or reuse app
-let app;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApp();
-}
+// init or reuse
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
-const auth = getAuth(app);
 
-// ---------- Utility functions ----------
+/* ---------- Utility functions ---------- */
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+const show = el => el?.classList.remove("hidden");
+const hide = el => el?.classList.add("hidden");
 
 function fmtDateISO(d) {
-  // returns YYYY-MM-DD
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
-
 function niceWhen(dateStr, slotLabel) {
-  // dateStr is 'YYYY-MM-DD', slotLabel like "18:00-19:00"
   const d = new Date(dateStr + "T00:00:00");
   const opts = { year: "numeric", month: "short", day: "numeric" };
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-// ---------- Slot generation (simple hourly slots) ----------
+/* ---------- Slot generation (simple hourly slots) ---------- */
 const OPEN_HOUR = 6;   // 6:00
 const CLOSE_HOUR = 23; // 23:00 (last slot 22:00-23:00)
 const BUFFER_MIN = 10; // informational only
@@ -87,14 +70,10 @@ function generateSlots() {
 }
 const ALL_SLOTS = generateSlots();
 
-// price mapping (simple)
-const PRICE_BY_COURT = {
-  "5A": 600,  // Half Ground Football
-  "7A": 900,  // Full Ground Football
-  "CRK": 1500 // Cricket
-};
+/* ---------- Price mapping ---------- */
+const PRICE_BY_COURT = { "5A": 600, "7A": 900, "CRK": 1500 };
 
-// ---------- DOM refs ----------
+/* ---------- DOM refs ---------- */
 const dateInput = $("#date");
 const courtPicker = $("#courtPicker");
 const slotList = $("#slotList");
@@ -116,76 +95,62 @@ const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
-// state
+/* ---------- state ---------- */
 let selectedCourt = null;
 let selectedSlot = null;
 let selectedDate = null;
 let selectedAmount = 0;
 
-// ---------- UI helpers ----------
-function show(element) { element.classList.remove("hidden"); }
-function hide(element) { element.classList.add("hidden"); }
+/* ---------- UI helpers ---------- */
 function openModal() { modal.classList.remove("hidden"); }
 function closeModalFn() { modal.classList.add("hidden"); resetModalFields(); }
 function resetModalFields() {
-  mName.value = "";
-  mPhone.value = "";
-  mCoupon.value = "";
-  mNotes.value = "";
-  mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
+  if (mName) mName.value = "";
+  if (mPhone) mPhone.value = "";
+  if (mCoupon) mCoupon.value = "";
+  if (mNotes) mNotes.value = "";
+  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
 }
 
-// set default date to today
-dateInput.value = fmtDateISO(new Date());
+/* ---------- set default date ---------- */
+if (dateInput) dateInput.value = fmtDateISO(new Date());
 
-// court button click handling (delegation)
-courtPicker.addEventListener("click", (ev) => {
-  const btn = ev.target.closest("button[data-id]");
-  if (!btn) return;
-  // mark selection style
-  $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
-  btn.classList.add("selected-court", "ring-2", "ring-emerald-400");
-  selectedCourt = btn.getAttribute("data-id");
-  renderSlots(); // refresh
-});
-
-// date change
-dateInput.addEventListener("change", () => {
-  renderSlots();
-});
-
-// populate amenities and rules on load (small convenience)
+/* ---------- populate static UI bits ---------- */
 (function populateStatic() {
   const am = $("#amenities");
-  ["Floodlights", "Parking", "Changing Rooms", "Water Bottle", "First Aid"].forEach(a=>{
-    const el = document.createElement("span");
-    el.className = "px-3 py-1 rounded-full border text-sm";
-    el.textContent = a;
-    am.appendChild(el);
-  });
+  if (am) {
+    ["Floodlights", "Parking", "Changing Rooms", "Water Bottle", "First Aid"].forEach(a=>{
+      const el = document.createElement("span");
+      el.className = "px-3 py-1 rounded-full border text-sm";
+      el.textContent = a;
+      am.appendChild(el);
+    });
+  }
   const rules = $("#rulesList");
-  ["No smoking", "No outside food", "Arrive 10 mins before", "Respect booking time"].forEach(r=>{
-    const li = document.createElement("li");
-    li.className = "text-sm";
-    li.textContent = r;
-    rules.appendChild(li);
-  });
-  $("#addr").textContent = "Near City Sports Complex, New Town, Kolkata 700156";
-  $("#emailLink").href = "mailto:hello@gods.example";
+  if (rules) {
+    ["No smoking", "No outside food", "Arrive 10 mins before", "Respect booking time"].forEach(r=>{
+      const li = document.createElement("li");
+      li.className = "text-sm";
+      li.textContent = r;
+      rules.appendChild(li);
+    });
+  }
+  const addr = $("#addr");
+  if (addr) addr.textContent = "Near City Sports Complex, New Town, Kolkata 700156";
+  const emailLink = $("#emailLink");
+  if (emailLink) { emailLink.href = "mailto:hello@gods.example"; emailLink.textContent = "hello@gods.example"; }
 })();
 
-// ---------- Slot rendering and availability check ----------
+/* ---------- Firestore helpers ---------- */
 async function fetchBookingsFor(dateISO, courtId) {
-  // returns array of booking docs for date + court not cancelled (pending/confirmed)
   if (!dateISO || !courtId) return [];
-  // bookings store date as 'YYYY-MM-DD' string (we will use this)
-  const q = query(
-    collection(db, "bookings"),
-    where("date", "==", dateISO),
-    where("court", "==", courtId),
-    orderBy("createdAt", "asc")
-  );
   try {
+    const q = query(
+      collection(db, "bookings"),
+      where("date", "==", dateISO),
+      where("court", "==", courtId),
+      orderBy("createdAt", "asc")
+    );
     const snap = await getDocs(q);
     const docs = [];
     snap.forEach(d => {
@@ -200,19 +165,19 @@ async function fetchBookingsFor(dateISO, courtId) {
   }
 }
 
+/* ---------- Slot rendering ---------- */
 async function renderSlots() {
+  if (!slotList) return;
   slotList.innerHTML = "";
-  selectedDate = dateInput.value;
+  selectedDate = dateInput?.value;
   if (!selectedCourt) {
     slotList.innerHTML = `<div class="text-sm text-gray-500">Select a court to view slots.</div>`;
     return;
   }
 
-  // fetch bookings for date+court
   const bookings = await fetchBookingsFor(selectedDate, selectedCourt);
   const occupied = new Set(bookings.filter(b => b.status !== "cancelled").map(b => b.slotId));
 
-  // render all slots
   ALL_SLOTS.forEach(s => {
     const item = document.createElement("div");
     item.className = "flex items-center justify-between p-2 border rounded-xl";
@@ -235,25 +200,25 @@ async function renderSlots() {
   });
 }
 
-// ---------- Modal flow ----------
+/* ---------- Modal flow ---------- */
 function openBookingModal(slot) {
   selectedSlot = slot;
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-  mTitle.textContent = `Book ${selectedCourt} · ${slot.label}`;
-  mWhen.textContent = niceWhen(selectedDate, slot.label);
-  mPrice.textContent = `₹${selectedAmount}`;
+  if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${slot.label}`;
+  if (mWhen) mWhen.textContent = niceWhen(selectedDate, slot.label);
+  if (mPrice) mPrice.textContent = `₹${selectedAmount}`;
   openModal();
 }
 
-closeModal.addEventListener("click", closeModalFn);
-mCancel.addEventListener("click", closeModalFn);
+closeModal?.addEventListener("click", closeModalFn);
+mCancel?.addEventListener("click", closeModalFn);
 
-// confirm booking: writes to Firestore
-mConfirm.addEventListener("click", async () => {
-  const name = mName.value.trim();
-  const phone = mPhone.value.trim();
-  const coupon = mCoupon.value.trim();
-  const notes = mNotes.value.trim();
+/* ---------- confirm booking: writes to Firestore ---------- */
+mConfirm?.addEventListener("click", async () => {
+  const name = mName?.value?.trim();
+  const phone = mPhone?.value?.trim();
+  const coupon = mCoupon?.value?.trim();
+  const notes = mNotes?.value?.trim();
 
   if (!name) return alert("Please enter your name.");
   if (!phone || !/^\+?\d{8,15}$/.test(phone)) return alert("Enter phone with country code, e.g. +91...");
@@ -274,31 +239,45 @@ mConfirm.addEventListener("click", async () => {
 
   try {
     const ref = await addDoc(collection(db, "bookings"), booking);
+
     // show confirm card
-    cid.textContent = ref.id;
-    cwhen.textContent = niceWhen(selectedDate, selectedSlot.label);
-    ccourt.textContent = (selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
-    camount.textContent = `₹${selectedAmount}`;
-    // WA prefilled message
+    if (cid) cid.textContent = ref.id;
+    if (cwhen) cwhen.textContent = niceWhen(selectedDate, selectedSlot.label);
+    if (ccourt) ccourt.textContent = selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)";
+    if (camount) camount.textContent = `₹${selectedAmount}`;
     const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
-    confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
+    if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
+
     show(confirmCard);
     closeModalFn();
+
+    // Re-render slots so booked slot shows as occupied
+    renderSlots();
   } catch (err) {
     console.error("create booking error", err);
     alert("Could not create booking. Try again.");
   }
 });
 
-// hide confirm card when user changes date/court
-dateInput.addEventListener("change", ()=> hide(confirmCard));
-courtPicker.addEventListener("click", ()=> hide(confirmCard));
+/* ---------- hide confirm card when date/court changes ---------- */
+dateInput?.addEventListener("change", ()=> hide(confirmCard));
+courtPicker?.addEventListener("click", ()=> hide(confirmCard));
 
-// ---------- small UX: auto-render initial slots on load ----------
+/* ---------- court selection handlers ---------- */
+courtPicker?.addEventListener("click", (ev) => {
+  const btn = ev.target.closest("button[data-id]");
+  if (!btn) return;
+  $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
+  btn.classList.add("selected-court", "ring-2", "ring-emerald-400");
+  selectedCourt = btn.getAttribute("data-id");
+  hide(confirmCard);
+  renderSlots();
+});
+
+/* ---------- initial setup ---------- */
 window.addEventListener("load", () => {
-  // preselect first court button visually if none selected
   if (!selectedCourt) {
-    const first = courtPicker.querySelector("button[data-id]");
+    const first = courtPicker?.querySelector("button[data-id]");
     if (first) {
       first.classList.add("selected-court", "ring-2", "ring-emerald-400");
       selectedCourt = first.getAttribute("data-id");
@@ -306,4 +285,3 @@ window.addEventListener("load", () => {
   }
   renderSlots();
 });
-
