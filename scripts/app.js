@@ -1,12 +1,6 @@
 // scripts/app.js (updated ready-to-drop)
-// ES module for browser — Firestore-only, no auth/admin
-// Uses Firebase v12.5.0 CDN
-//
-// - uses top-level `wishlists` collection
-// - batch-fetches wishlists for selected date+court to show counts
-// - storageBucket corrected, orderBy removed to avoid composite index issue
-// - visible error toasts and improved error messages
-// - fixes: no invalid reassignment of `modal`; consistent slot id/label hyphen; debug logs
+// Prevent duplicate bookings by pre-checking Firestore for same date+court+slotId
+// Keeps wishlist support and improved error toasts/logging
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -84,7 +78,7 @@ function generateSlots() {
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     const start = `${String(h).padStart(2, "0")}:00`;
     const end = `${String(h + 1).padStart(2, "0")}:00`;
-    // use same hyphen in id and label to avoid subtle mismatches
+    // keep hyphen consistent in id/label
     slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
@@ -122,9 +116,7 @@ let selectedSlot = null;
 let selectedDate = null;
 let selectedAmount = 0;
 
-// modal modes: "booking" or "wishlist"
 let modalMode = "booking";
-// store preferred booking id when opening wishlist (no reassign to modal element)
 let preferredBookingId = null;
 
 /* ---------- set defaults & populate static UI ---------- */
@@ -163,7 +155,7 @@ async function fetchBookingsFor(dateISO, courtId) {
       collection(db, "bookings"),
       where("date", "==", dateISO),
       where("court", "==", courtId)
-      // orderBy("createdAt", "asc") // uncomment only after creating composite index in Firebase console
+      // no orderBy to avoid composite index requirement here
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -180,7 +172,6 @@ async function fetchBookingsFor(dateISO, courtId) {
   }
 }
 
-// NEW: fetch wishlist entries for the given date + court (returns array)
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
@@ -214,7 +205,6 @@ async function renderSlots() {
     return;
   }
 
-  // fetch bookings + wishlists once (batched)
   let bookings = [], wishlists = [];
   try {
     [bookings, wishlists] = await Promise.all([
@@ -226,7 +216,6 @@ async function renderSlots() {
     toast("Error fetching bookings/wishlists — check console", { error: true, duration: 8000 });
   }
 
-  // DEBUG logging
   console.log("renderSlots - selectedDate:", selectedDate, "selectedCourt:", selectedCourt);
   console.log("bookings fetched:", bookings);
   console.log("wishlists fetched:", wishlists);
@@ -234,7 +223,6 @@ async function renderSlots() {
   const occupied = new Set(bookings.filter(b => b && b.status !== "cancelled").map(b => b.slotId));
   console.log("occupied slotIds:", Array.from(occupied));
 
-  // build wishlists map: slotId -> array of wishlist entries
   const wishlistMap = wishlists.reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
     if (!acc[w.slotId]) acc[w.slotId] = [];
@@ -257,7 +245,6 @@ async function renderSlots() {
         <div class="text-xs text-gray-500">by ${occ?.userName ?? "—"}</div>
       `;
 
-      // wishlist count badge & button
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
@@ -271,7 +258,6 @@ async function renderSlots() {
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
-        // store preferred booking id for write
         preferredBookingId = occ?._id ?? null;
         openWishlistModal(s, preferredBookingId);
       });
@@ -284,7 +270,6 @@ async function renderSlots() {
       btn.addEventListener("click", () => openBookingModal(s));
       right.appendChild(btn);
 
-      // also show wishlist interest if any (user may want wishlist for open slot too)
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
@@ -367,6 +352,42 @@ mConfirm?.addEventListener("click", async () => {
     };
 
     try {
+      // PRE-CHECK: ensure there is no active booking for this exact slot
+      try {
+        const conflictQ = query(
+          collection(db, "bookings"),
+          where("date", "==", selectedDate),
+          where("court", "==", selectedCourt),
+          where("slotId", "==", selectedSlot.id)
+        );
+        const conflictSnap = await getDocs(conflictQ);
+        const existing = [];
+        conflictSnap.forEach(d => {
+          const data = d.data();
+          data._id = d.id;
+          existing.push(data);
+        });
+        // if any existing booking with status != cancelled -> conflict
+        const conflict = existing.find(b => b && b.status !== "cancelled");
+        if (conflict) {
+          const who = conflict.userName ? ` by ${conflict.userName}` : "";
+          alert(`Sorry — that slot is already booked${who}. Please choose another slot or add yourself to the wishlist.`);
+          return;
+        }
+      } catch (qerr) {
+        // if query fails due to missing index, surface useful info
+        console.error("Conflict-check failed", qerr);
+        const qmsg = qerr?.message || String(qerr);
+        if (qmsg.includes("requires an index")) {
+          toast("Firestore requires an index for booking-check. Click console link to create it.", { error: true, duration: 8000 });
+        } else {
+          toast("Could not verify slot availability — try again.", { error: true, duration: 8000 });
+        }
+        // continue (we could block, but better to avoid false positives) — here we'll abort to be safe
+        return;
+      }
+
+      // No conflict — proceed to write
       console.group("Booking write start (Firestore)");
       console.log("Booking object:", booking);
       const ref = await addDoc(collection(db, "bookings"), booking);
@@ -409,7 +430,7 @@ mConfirm?.addEventListener("click", async () => {
       slotLabel: selectedSlot.label,
       date: selectedDate,
       preferredBookingId: preferredBookingId || null,
-      status: "open", // open / contacted / converted / expired
+      status: "open",
       createdAt: serverTimestamp()
     };
 
