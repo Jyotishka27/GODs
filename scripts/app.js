@@ -3,7 +3,7 @@
 // - Shows "Booked" (no username) + Wishlist button for occupied slots
 // - Prevents duplicate bookings via pre-check
 // - Stores wishlists in top-level `wishlists` collection
-// - Includes helpful toasts, validation, and better wishlist modal UX
+// - Includes helpful toasts, validation, wishlist modal UX, and mutual-exclusion booking rules
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -91,6 +91,77 @@ const ALL_SLOTS = generateSlots();
 /* ---------- Prices ---------- */
 const PRICE_BY_COURT = { "5A": 600, "7A": 900, "CRK": 1500 };
 
+/* ---------- Court meta (edit to match your actual court data-ids) ----------
+ - Each court id -> type: "half" | "full" | "cricket"
+ - Example mapping below:
+   "5A" and "5B" are halves (two halves)
+   "7A" is full ground (football)
+   "CRK" is cricket full ground
+ If your UI uses different data-id values, update the object keys below.
+------------------------------------------------------------------------- */
+const COURT_META = {
+  "5A": { type: "half", label: "Half A" },
+  "5B": { type: "half", label: "Half B" }, // keep if you support two halves
+  "7A": { type: "full", label: "Full Ground" },
+  "CRK": { type: "cricket", label: "Cricket (Full)" }
+};
+
+function metaFor(courtId) {
+  return COURT_META[courtId] || { type: "unknown", label: courtId };
+}
+
+/* ---------- occupancy helpers ---------- */
+/**
+ * bookingDocs: array of booking objects with fields { slotId, court, status, ... }
+ * returns map: slotId -> { halves: Set(courtIds), full: boolean, cricket: boolean, bookings: [...] }
+ */
+function computeSlotOccupancy(bookingDocs) {
+  const m = {};
+  bookingDocs.forEach(b => {
+    if (!b || !b.slotId) return;
+    const s = (m[b.slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
+    s.bookings.push(b);
+    if (b.status === "cancelled") return; // ignore cancelled
+    const meta = metaFor(b.court);
+    if (meta.type === "half") s.halves.add(b.court);
+    else if (meta.type === "full") s.full = true;
+    else if (meta.type === "cricket") s.cricket = true;
+  });
+  return m;
+}
+
+/**
+ * Decide whether a slot is available for a targetCourt based on occupancy map
+ * returns { allowed: boolean, reason: string|null }
+ */
+function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
+  const occ = occupancyMap[slotId] || { halves: new Set(), full: false, cricket: false, bookings: [] };
+  const tmeta = metaFor(targetCourt);
+  if (tmeta.type === "half") {
+    if (occ.full) return { allowed: false, reason: "Blocked — full ground already booked." };
+    if (occ.cricket) return { allowed: false, reason: "Blocked — cricket booked." };
+    // allow up to 2 half bookings (different halves)
+    if (occ.halves.size >= 2) return { allowed: false, reason: "Both halves already booked." };
+    // block duplicate same-half booking
+    if (occ.halves.has(targetCourt)) return { allowed: false, reason: "You already booked this half for this slot." };
+    return { allowed: true, reason: null };
+  } else if (tmeta.type === "full") {
+    if (occ.halves.size > 0) return { allowed: false, reason: "Blocked — one or more halves already booked." };
+    if (occ.cricket) return { allowed: false, reason: "Blocked — cricket booked." };
+    if (occ.full) return { allowed: false, reason: "Full ground already booked." };
+    return { allowed: true, reason: null };
+  } else if (tmeta.type === "cricket") {
+    if (occ.halves.size > 0) return { allowed: false, reason: "Blocked — halves already booked." };
+    if (occ.full) return { allowed: false, reason: "Blocked — full ground booked." };
+    if (occ.cricket) return { allowed: false, reason: "Cricket already booked." };
+    return { allowed: true, reason: null };
+  } else {
+    // unknown type -> be conservative
+    if (occ.bookings.length) return { allowed: false, reason: "Slot already booked." };
+    return { allowed: true, reason: null };
+  }
+}
+
 /* ---------- DOM refs ---------- */
 const dateInput = $("#date");
 const courtPicker = $("#courtPicker");
@@ -174,6 +245,29 @@ async function fetchBookingsFor(dateISO, courtId) {
   }
 }
 
+// New helper: fetch ALL bookings for a date (across courts) - used to compute occupancy per slot
+async function fetchBookingsForDate(dateISO) {
+  if (!dateISO) return [];
+  try {
+    const q = query(
+      collection(db, "bookings"),
+      where("date", "==", dateISO)
+    );
+    const snap = await getDocs(q);
+    const docs = [];
+    snap.forEach(d => {
+      const data = d.data();
+      data._id = d.id;
+      docs.push(data);
+    });
+    return docs;
+  } catch (err) {
+    console.error("fetchBookingsForDate err", err);
+    toast("Firestore error: " + (err?.message || err), { error: true, duration: 8000 });
+    return [];
+  }
+}
+
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
@@ -197,7 +291,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- Slot rendering (shows Booked + Wishlist button, no username) ---------- */
+/* ---------- Slot rendering (enforces mutual-exclusion rules) ---------- */
 async function renderSlots() {
   if (!slotList) return;
   slotList.innerHTML = "";
@@ -207,10 +301,11 @@ async function renderSlots() {
     return;
   }
 
-  let bookings = [], wishlists = [];
+  let bookingsAll = [], wishlists = [];
   try {
-    [bookings, wishlists] = await Promise.all([
-      fetchBookingsFor(selectedDate, selectedCourt),
+    // fetch all bookings for the date (across courts) to compute occupancy
+    [bookingsAll, wishlists] = await Promise.all([
+      fetchBookingsForDate(selectedDate),
       fetchWishlistsFor(selectedDate, selectedCourt)
     ]);
   } catch (e) {
@@ -220,11 +315,11 @@ async function renderSlots() {
 
   // debug logs
   console.log("renderSlots - selectedDate:", selectedDate, "selectedCourt:", selectedCourt);
-  console.log("bookings fetched:", bookings);
-  console.log("wishlists fetched:", wishlists);
+  console.log("bookings fetched (all):", bookingsAll);
+  console.log("wishlists fetched (for selectedCourt):", wishlists);
 
-  const occupied = new Set(bookings.filter(b => b && b.status !== "cancelled").map(b => b.slotId));
-  console.log("occupied slotIds:", Array.from(occupied));
+  // occupancy map built from all bookings for the date
+  const occupancy = computeSlotOccupancy(bookingsAll);
 
   const wishlistMap = wishlists.reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
@@ -241,8 +336,11 @@ async function renderSlots() {
     left.innerHTML = `<div class="font-medium">${s.label}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
     const right = document.createElement("div");
 
-    if (occupied.has(s.id)) {
-      // Show only "Booked" + Wishlist button (no username)
+    // Decide availability for this selectedCourt using the occupancy map
+    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+
+    if (!avail.allowed) {
+      // Slot blocked for the currently selected court type -> show Booked + Wishlist
       right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
 
       const count = (wishlistMap[s.id] || []).length;
@@ -258,14 +356,15 @@ async function renderSlots() {
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
-        // prefer correlate to first booking id for this slot (if any)
-        const occ = bookings.find(b => b.slotId === s.id);
-        preferredBookingId = occ?._id ?? null;
+        // find a representative booking for admin reference if available
+        const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
+        preferredBookingId = occBooking?._id ?? null;
         openWishlistModal(s, preferredBookingId);
       });
       right.appendChild(wishBtn);
 
     } else {
+      // available to book
       const btn = document.createElement("button");
       btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
       btn.textContent = "Book";
@@ -292,13 +391,11 @@ async function renderSlots() {
 function showFieldError(fieldEl, message) {
   // placeholder for per-field inline error UI; right now, we just console.log
   if (!fieldEl) return;
-  // If you later add a <div class="field-error" data-for="m-name">..</div> you can populate it here.
   console.log("field error", fieldEl, message);
 }
 
 function clearFieldErrors() {
-  // placeholder to clear inline errors
-  // no-op currently
+  // placeholder - no-op for now
 }
 
 function setConfirmLoading(isLoading) {
@@ -355,7 +452,6 @@ function openWishlistModal(slot, prefBookingId = null) {
   preferredBookingId = prefBookingId || null;
   resetModalFields();
   openModal();
-  // focus name field and give clear UX
   setTimeout(()=> { mName?.focus(); }, 120);
 }
 
@@ -374,7 +470,7 @@ function resetModalFields() {
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* ---------- Confirm handler (booking + wishlist) with duplicate-check for wishlist ---------- */
+/* ---------- Confirm handler (booking + wishlist) with rule-based pre-check ---------- */
 mConfirm?.addEventListener("click", async () => {
   const nameRaw = mName?.value?.trim();
   const phoneRaw = mPhone?.value?.trim();
@@ -383,7 +479,6 @@ mConfirm?.addEventListener("click", async () => {
 
   const v = validateModalFields();
   if (!v.ok) {
-    // show friendly toast in addition to field error
     if (v.reason === "name") toast("Please enter your name.", { error: true });
     if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
     return;
@@ -394,7 +489,6 @@ mConfirm?.addEventListener("click", async () => {
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
 
   if (modalMode === "booking") {
-    // booking flow unchanged
     const booking = {
       userName: name,
       phone,
@@ -410,12 +504,11 @@ mConfirm?.addEventListener("click", async () => {
     };
 
     try {
-      // PRE-CHECK: check for existing active booking for this exact slot
+      // STRONGER PRE-CHECK: fetch all bookings for this date+slot (across courts) and enforce rules
       try {
         const conflictQ = query(
           collection(db, "bookings"),
           where("date", "==", selectedDate),
-          where("court", "==", selectedCourt),
           where("slotId", "==", selectedSlot.id)
         );
         const conflictSnap = await getDocs(conflictQ);
@@ -425,9 +518,12 @@ mConfirm?.addEventListener("click", async () => {
           data._id = d.id;
           existing.push(data);
         });
-        const conflict = existing.find(b => b && b.status !== "cancelled");
-        if (conflict) {
-          alert("Sorry — that slot is already booked. Please choose another slot or add yourself to the wishlist.");
+
+        // compute occupancy from existing bookings for this single slot
+        const occMap = computeSlotOccupancy(existing);
+        const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, selectedCourt);
+        if (!availabilityCheck.allowed) {
+          alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
           closeModalFn();
           renderSlots();
           return;
@@ -481,7 +577,7 @@ mConfirm?.addEventListener("click", async () => {
   if (modalMode === "wishlist") {
     setConfirmLoading(true);
     try {
-      // Check duplicates: same phone, date, court, slotId, status=open
+      // Check duplicates: same phone, date, court, slotId
       const dupQ = query(
         collection(db, "wishlists"),
         where("date", "==", selectedDate),
