@@ -9,10 +9,42 @@
     "lng": 88.479
   },
   "courts": [
-    { "id": "5A",  "label": "Half Ground Football", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
-    { "id": "5A-B","label": "Half Ground Football (other half)", "durationMins": 60,  "basePrice": 1500,  "resourceId": "main-pitch", "units": 1 },
-    { "id": "7A",  "label": "Full Ground Football", "durationMins": 60, "basePrice": 2500,  "resourceId": "main-pitch", "units": 2 },
-    { "id": "CRK", "label": "Cricket", "durationMins": 60, "basePrice": 2500, "resourceId": "main-pitch", "units": 2 }
+    {
+      "id": "5A",
+      "label": "Half Ground Football (A)",
+      "type": "half",
+      "durationMins": 60,
+      "basePrice": 1500,
+      "resourceId": "main-pitch",
+      "units": 1
+    },
+    {
+      "id": "5B",
+      "label": "Half Ground Football (B)",
+      "type": "half",
+      "durationMins": 60,
+      "basePrice": 1500,
+      "resourceId": "main-pitch",
+      "units": 1
+    },
+    {
+      "id": "7A",
+      "label": "Full Ground Football",
+      "type": "full",
+      "durationMins": 60,
+      "basePrice": 2500,
+      "resourceId": "main-pitch",
+      "units": 2
+    },
+    {
+      "id": "CRK",
+      "label": "Cricket",
+      "type": "cricket",
+      "durationMins": 60,
+      "basePrice": 2500,
+      "resourceId": "main-pitch",
+      "units": 2
+    }
   ],
   "resourceCapacity": {
     "main-pitch": 2
