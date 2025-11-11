@@ -3,7 +3,7 @@
 // - Shows "Booked" (no username) + Wishlist button for occupied slots
 // - Prevents duplicate bookings via pre-check
 // - Stores wishlists in top-level `wishlists` collection
-// - Includes helpful toasts and debug logs
+// - Includes helpful toasts, validation, and better wishlist modal UX
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -287,7 +287,50 @@ async function renderSlots() {
   });
 }
 
-/* ---------- Modal flow ---------- */
+/* ---------- Modal flow (improved wishlist modal UX + validation) ---------- */
+
+function showFieldError(fieldEl, message) {
+  // placeholder for per-field inline error UI; right now, we just console.log
+  if (!fieldEl) return;
+  // If you later add a <div class="field-error" data-for="m-name">..</div> you can populate it here.
+  console.log("field error", fieldEl, message);
+}
+
+function clearFieldErrors() {
+  // placeholder to clear inline errors
+  // no-op currently
+}
+
+function setConfirmLoading(isLoading) {
+  if (!mConfirm) return;
+  if (isLoading) {
+    mConfirm.disabled = true;
+    mConfirm.dataset.orig = mConfirm.textContent;
+    mConfirm.textContent = "Saving...";
+    mConfirm.classList.add("opacity-70", "cursor-not-allowed");
+  } else {
+    mConfirm.disabled = false;
+    mConfirm.textContent = mConfirm.dataset.orig || (modalMode === "wishlist" ? "Save to Wishlist" : "Confirm");
+    mConfirm.classList.remove("opacity-70", "cursor-not-allowed");
+  }
+}
+
+function validateModalFields() {
+  clearFieldErrors();
+  const name = mName?.value?.trim() || "";
+  const phone = mPhone?.value?.trim() || "";
+
+  if (name.length < 2) {
+    showFieldError(mName, "Please enter your full name (min 2 characters).");
+    return { ok: false, reason: "name" };
+  }
+  if (!/^\+?\d{8,15}$/.test(phone)) {
+    showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91...");
+    return { ok: false, reason: "phone" };
+  }
+  return { ok: true, name, phone };
+}
+
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -312,6 +355,8 @@ function openWishlistModal(slot, prefBookingId = null) {
   preferredBookingId = prefBookingId || null;
   resetModalFields();
   openModal();
+  // focus name field and give clear UX
+  setTimeout(()=> { mName?.focus(); }, 120);
 }
 
 function openModal() { modal?.classList.remove("hidden"); }
@@ -322,23 +367,34 @@ function resetModalFields() {
   if (mCoupon) mCoupon.value = "";
   if (mNotes) mNotes.value = "";
   if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
+  clearFieldErrors();
+  setConfirmLoading(false);
 }
 
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* ---------- Confirm handler (booking + wishlist) ---------- */
+/* ---------- Confirm handler (booking + wishlist) with duplicate-check for wishlist ---------- */
 mConfirm?.addEventListener("click", async () => {
-  const name = mName?.value?.trim();
-  const phone = mPhone?.value?.trim();
+  const nameRaw = mName?.value?.trim();
+  const phoneRaw = mPhone?.value?.trim();
   const coupon = mCoupon?.value?.trim();
   const notes = mNotes?.value?.trim();
 
-  if (!name) { return alert("Please enter your name."); }
-  if (!phone || !/^\+?\d{8,15}$/.test(phone)) { return alert("Enter phone with country code, e.g. +91..."); }
+  const v = validateModalFields();
+  if (!v.ok) {
+    // show friendly toast in addition to field error
+    if (v.reason === "name") toast("Please enter your name.", { error: true });
+    if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
+    return;
+  }
+  const name = v.name;
+  const phone = v.phone;
+
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
 
   if (modalMode === "booking") {
+    // booking flow unchanged
     const booking = {
       userName: name,
       phone,
@@ -372,6 +428,8 @@ mConfirm?.addEventListener("click", async () => {
         const conflict = existing.find(b => b && b.status !== "cancelled");
         if (conflict) {
           alert("Sorry — that slot is already booked. Please choose another slot or add yourself to the wishlist.");
+          closeModalFn();
+          renderSlots();
           return;
         }
       } catch (qerr) {
@@ -386,6 +444,7 @@ mConfirm?.addEventListener("click", async () => {
       }
 
       // No conflict — proceed to write booking
+      setConfirmLoading(true);
       console.group("Booking write start (Firestore)");
       console.log("Booking object:", booking);
       const ref = await addDoc(collection(db, "bookings"), booking);
@@ -412,36 +471,64 @@ mConfirm?.addEventListener("click", async () => {
       toast("Booking failed: " + emsg, { error: true, duration: 8000 });
       alert("Booking failed — check console. Error: " + emsg);
       console.groupEnd();
+    } finally {
+      setConfirmLoading(false);
     }
     return;
   }
 
-  // wishlist mode
+  // wishlist mode: validate + duplicate-check on Firestore then save
   if (modalMode === "wishlist") {
-    const wishlistEntry = {
-      userName: name,
-      phone,
-      notes: notes || null,
-      coupon: coupon || null,
-      court: selectedCourt,
-      slotId: selectedSlot.id,
-      slotLabel: selectedSlot.label,
-      date: selectedDate,
-      preferredBookingId: preferredBookingId || null,
-      status: "open",
-      createdAt: serverTimestamp()
-    };
-
+    setConfirmLoading(true);
     try {
+      // Check duplicates: same phone, date, court, slotId, status=open
+      const dupQ = query(
+        collection(db, "wishlists"),
+        where("date", "==", selectedDate),
+        where("court", "==", selectedCourt),
+        where("slotId", "==", selectedSlot.id),
+        where("phone", "==", phoneRaw)
+      );
+      const dupSnap = await getDocs(dupQ);
+      const dupRows = [];
+      dupSnap.forEach(d => {
+        const dt = d.data();
+        dt._id = d.id;
+        dupRows.push(dt);
+      });
+      if (dupRows.length) {
+        toast("You are already on the wishlist for this slot.", { duration: 5000 });
+        setConfirmLoading(false);
+        closeModalFn();
+        return;
+      }
+
+      const wishlistEntry = {
+        userName: name,
+        phone,
+        notes: notes || null,
+        coupon: coupon || null,
+        court: selectedCourt,
+        slotId: selectedSlot.id,
+        slotLabel: selectedSlot.label,
+        date: selectedDate,
+        preferredBookingId: preferredBookingId || null,
+        status: "open",
+        createdAt: serverTimestamp()
+      };
+
       const ref = await addDoc(collection(db, "wishlists"), wishlistEntry);
       toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
       closeModalFn();
       renderSlots();
+
     } catch (err) {
       console.error("Wishlist save failed", err);
       const emsg = err?.message || String(err);
       toast("Wishlist save failed: " + emsg, { error: true, duration: 8000 });
       alert("Wishlist save failed — check console. Error: " + emsg);
+    } finally {
+      setConfirmLoading(false);
     }
     return;
   }
