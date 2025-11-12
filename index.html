@@ -38,28 +38,34 @@
 
 </head>
 <body class="bg-white text-gray-900">
+  <noscript>
+    <div class="max-w-6xl mx-auto px-4 py-4 text-sm text-red-600 bg-red-50 border rounded-md">
+      This booking widget requires JavaScript. Please enable JavaScript or contact us at <a href="tel:+919876543210">+91-98765-43210</a>.
+    </div>
+  </noscript>
+
   <!-- Header -->
   <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-      <a class="flex items-center gap-2" href="#">
+      <a class="flex items-center gap-2" href="#" aria-label="GODs Turf home">
         <img src="./assets/Logo_RED.jpg" alt="logo" class="h-9 w-9">
         <span class="font-extrabold tracking-tight"> <span id="bizName">GODs Turf</span> </span>
       </a>
-      <nav class="hidden md:flex items-center gap-6">
+      <nav class="hidden md:flex items-center gap-6" aria-label="Main navigation">
         <a href="#book" class="hover:text-emerald-600">Book</a>
         <a href="#contact" class="hover:text-emerald-600">Contact</a>
         <a href="#gallery" class="hover:text-emerald-600">Gallery</a>
       </nav>
       <div class="flex items-center gap-2">
-        <a id="waLink" href="https://wa.me/919876543210" target="_blank" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">WhatsApp</a>
-        <a id="callLinkHeader" href="tel:+919876543210" class="px-3 py-2 rounded-xl border hover:bg-gray-50">Call</a>
+        <a id="waLink" href="https://wa.me/919876543210" target="_blank" aria-label="Message GODs Turf on WhatsApp" class="px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700">WhatsApp</a>
+        <a id="callLinkHeader" href="tel:+919876543210" aria-label="Call GODs Turf" class="px-3 py-2 rounded-xl border hover:bg-gray-50">Call</a>
       </div>
     </div>
   </header>
 
   <!-- Hero -->
   <section class="relative">
-    <img src="./assets/hero-turf.svg" alt="turf" class="w-full h-[48vh] object-cover">
+    <img src="./assets/hero-turf.svg" alt="turf" class="w-full h-[48vh] object-cover" loading="lazy">
     <div class="absolute inset-0 bg-black/30"></div>
     <div class="absolute inset-0 flex items-center">
       <div class="max-w-6xl mx-auto px-4">
@@ -77,18 +83,19 @@
         <div class="p-4 border rounded-2xl">
           <div class="flex flex-wrap items-center gap-3">
             <input id="date" type="date" class="border rounded-xl px-3 py-2" />
-            <div id="courtPicker" class="flex flex-wrap items-center gap-2">
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition ring-2 ring-emerald-400" data-id="5A">Half Ground Football</button>
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="7A">Full Ground Football</button>
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="CRK">Cricket (Full Ground)</button>
+            <div id="courtPicker" class="flex flex-wrap items-center gap-2" role="list">
+              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition ring-2 ring-emerald-400" data-id="5A" role="listitem">Half Ground A (5A)</button>
+              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="5B" role="listitem">Half Ground B (5B)</button>
+              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="7A" role="listitem">Full Ground (7A)</button>
+              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="CRK" role="listitem">Cricket (CRK)</button>
             </div>
           </div>
         </div>
         <div class="p-4 border rounded-2xl">
           <h3 class="font-semibold mb-3">Available slots</h3>
-          <div id="slotList" class="space-y-2"></div>
+          <div id="slotList" class="space-y-2" role="list" aria-live="polite"></div>
         </div>
-        <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200">
+        <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
           <h4 class="font-semibold mb-1">Booking created</h4>
           <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
           <div class="grid sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm">
@@ -128,7 +135,7 @@
 
   <!-- Map & Gallery -->
   <section class="max-w-6xl mx-auto px-4 pb-10">
-    <div id="map" class="mb-6"></div>
+    <div id="map" class="mb-6" aria-hidden="true"></div>
     <div>
       <h3 class="font-semibold mb-3">Gallery</h3>
       <div id="gallery" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
@@ -161,11 +168,12 @@
   </footer>
 
   <!-- Modal -->
-  <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4">
+  <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4"
+       role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
     <div class="bg-white rounded-2xl max-w-md w-full p-4">
       <div class="flex items-center justify-between mb-2">
         <h3 id="m-title" class="font-semibold">Booking</h3>
-        <button id="closeModal" class="text-gray-500 hover:text-black">✕</button>
+        <button id="closeModal" class="text-gray-500 hover:text-black" aria-label="Close dialog">✕</button>
       </div>
       <p id="m-when" class="text-sm text-gray-600 mb-2"></p>
       <p class="text-sm mb-2">Amount: <span id="m-price" class="font-semibold"></span></p>
@@ -188,8 +196,50 @@
   </div>
 
   <!-- Note: Booking & Wishlist handled by scripts/app.js -->
-  
   <script type="module" src="./scripts/app.js"></script>
-  <script>document.getElementById('year').textContent = new Date().getFullYear(); document.getElementById('bizName2').textContent = document.getElementById('bizName').textContent;</script>
+
+  <!-- Small inline helpers: set date bounds, ensure 5B present, normalize contact links -->
+  <script>
+    (function(){
+      // 1) Ensure 5B exists (idempotent)
+      const cp = document.getElementById('courtPicker');
+      if(cp && !cp.querySelector('button[data-id="5B"]')) {
+        const btn = document.createElement('button');
+        btn.className = 'px-4 py-2 rounded-xl border hover:bg-gray-50 transition';
+        btn.setAttribute('data-id','5B');
+        btn.textContent = 'Half Ground B (5B)';
+        cp.insertBefore(btn, cp.children[1] || null);
+      }
+
+      // 2) set date min/max and default (sync maxAdvanceDays with your config)
+      const dateInput = document.getElementById('date');
+      if(dateInput) {
+        const today = new Date();
+        const pad = n => String(n).padStart(2,'0');
+        const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        dateInput.min = iso(today);
+        const maxDays = 90; // change to match your config.maxAdvanceDays if needed
+        const maxDate = new Date(Date.now() + maxDays*24*60*60*1000);
+        dateInput.max = iso(maxDate);
+        dateInput.value = iso(today);
+      }
+
+      // 3) normalize contact links from single source of truth
+      const phone = "+919876543210";
+      const wa = document.getElementById("waLink");
+      const callH = document.getElementById("callLinkHeader");
+      const callF = document.getElementById("callLink");
+      if(wa) wa.href = `https://wa.me/${phone.replace(/\+/g,'')}`;
+      if(callH) callH.href = `tel:${phone}`;
+      if(callF) callF.href = `tel:${phone}`;
+    })();
+  </script>
+
+  <script>
+    // small nicety: set footer year and mirror biz name
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const biz = document.getElementById('bizName')?.textContent || 'GODs Turf';
+    document.getElementById('bizName2').textContent = biz;
+  </script>
 </body>
 </html>
