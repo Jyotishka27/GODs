@@ -91,14 +91,7 @@ const ALL_SLOTS = generateSlots();
 /* ---------- Prices ---------- */
 const PRICE_BY_COURT = { "5A": 1500, "7A": 2500, "CRK": 2500 };
 
-/* ---------- Court meta (edit to match your actual court data-ids) ----------
- - Each court id -> type: "half" | "full" | "cricket"
- - Example mapping below:
-   "5A" and "5B" are halves (two halves)
-   "7A" is full ground (football)
-   "CRK" is cricket full ground
- If your UI uses different data-id values, update the object keys below.
-------------------------------------------------------------------------- */
+/* ---------- Court meta (edit to match your actual court data-ids) ---------- */
 const COURT_META = {
   "5A": { type: "half", label: "Half A" },
   "5B": { type: "half", label: "Half B" }, // keep if you support two halves
@@ -106,11 +99,17 @@ const COURT_META = {
   "CRK": { type: "cricket", label: "Cricket (Full)" }
 };
 
-function metaFor(courtId) {
-  return COURT_META[courtId] || { type: "unknown", label: courtId };
+function normalizedKey(val) {
+  return (val === undefined || val === null) ? "" : String(val).trim().toUpperCase();
 }
 
-/* ---------- occupancy helpers ---------- */
+/* ---------- Replaced: metaFor (normalizes keys) ---------- */
+function metaFor(courtId) {
+  const key = normalizedKey(courtId);
+  return COURT_META[key] || { type: "unknown", label: key || courtId };
+}
+
+/* ---------- occupancy helpers (normalizes stored court ids) ---------- */
 /**
  * bookingDocs: array of booking objects with fields { slotId, court, status, ... }
  * returns map: slotId -> { halves: Set(courtIds), full: boolean, cricket: boolean, bookings: [...] }
@@ -119,14 +118,33 @@ function computeSlotOccupancy(bookingDocs) {
   const m = {};
   bookingDocs.forEach(b => {
     if (!b || !b.slotId) return;
-    const s = (m[b.slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
-    s.bookings.push(b);
+    const slotId = b.slotId;
+    const courtIdRaw = b.court ?? "";
+    const courtId = normalizedKey(courtIdRaw);
+    const s = (m[slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
+    // push a copy with normalized court for easier debugging
+    const copy = { ...b, court: courtId };
+    s.bookings.push(copy);
     if (b.status === "cancelled") return; // ignore cancelled
-    const meta = metaFor(b.court);
-    if (meta.type === "half") s.halves.add(b.court);
+
+    const meta = metaFor(courtId);
+    if (meta.type === "half") s.halves.add(courtId);
     else if (meta.type === "full") s.full = true;
     else if (meta.type === "cricket") s.cricket = true;
   });
+
+  // debug log for occupancy
+  Object.keys(m).forEach(slotId => {
+    try {
+      console.debug("Occupancy for", slotId, {
+        halves: Array.from(m[slotId].halves),
+        full: m[slotId].full,
+        cricket: m[slotId].cricket,
+        bookings: m[slotId].bookings
+      });
+    } catch (e) { /* ignore */ }
+  });
+
   return m;
 }
 
@@ -143,7 +161,7 @@ function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
     // allow up to 2 half bookings (different halves)
     if (occ.halves.size >= 2) return { allowed: false, reason: "Both halves already booked." };
     // block duplicate same-half booking
-    if (occ.halves.has(targetCourt)) return { allowed: false, reason: "You already booked this half for this slot." };
+    if (occ.halves.has(normalizedKey(targetCourt))) return { allowed: false, reason: "You already booked this half for this slot." };
     return { allowed: true, reason: null };
   } else if (tmeta.type === "full") {
     if (occ.halves.size > 0) return { allowed: false, reason: "Blocked — one or more halves already booked." };
@@ -225,10 +243,11 @@ if (dateInput) dateInput.value = fmtDateISO(new Date());
 async function fetchBookingsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
+    // ensure courtId normalized for query (DB should store normalized keys)
     const q = query(
       collection(db, "bookings"),
       where("date", "==", dateISO),
-      where("court", "==", courtId)
+      where("court", "==", normalizedKey(courtId))
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -274,7 +293,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
     const q = query(
       collection(db, "wishlists"),
       where("date", "==", dateISO),
-      where("court", "==", courtId)
+      where("court", "==", normalizedKey(courtId))
     );
     const snap = await getDocs(q);
     const docs = [];
@@ -328,6 +347,18 @@ async function renderSlots() {
     return acc;
   }, {});
   console.log("wishlistMap:", wishlistMap);
+
+  // debug final occupancy summary
+  try {
+    console.debug("Final occupancy summary:", Object.keys(occupancy).reduce((acc, k) => {
+      acc[k] = {
+        halves: Array.from(occupancy[k].halves),
+        full: occupancy[k].full,
+        cricket: occupancy[k].cricket
+      };
+      return acc;
+    }, {}));
+  } catch (e) { /* ignore */ }
 
   ALL_SLOTS.forEach(s => {
     const item = document.createElement("div");
@@ -488,13 +519,16 @@ mConfirm?.addEventListener("click", async () => {
 
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
 
+  // normalized court used for writes and checks
+  const normCourt = normalizedKey(selectedCourt);
+
   if (modalMode === "booking") {
     const booking = {
       userName: name,
       phone,
       coupon: coupon || null,
       notes: notes || null,
-      court: selectedCourt,
+      court: normCourt,
       slotId: selectedSlot.id,
       slotLabel: selectedSlot.label,
       date: selectedDate,
@@ -521,7 +555,7 @@ mConfirm?.addEventListener("click", async () => {
 
         // compute occupancy from existing bookings for this single slot
         const occMap = computeSlotOccupancy(existing);
-        const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, selectedCourt);
+        const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
         if (!availabilityCheck.allowed) {
           alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
           closeModalFn();
@@ -549,7 +583,7 @@ mConfirm?.addEventListener("click", async () => {
 
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
-      if (ccourt) ccourt.textContent = (selectedCourt === "5A" ? "Half Ground Football" : selectedCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
+      if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
       if (camount) camount.textContent = `₹${selectedAmount}`;
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
@@ -581,9 +615,9 @@ mConfirm?.addEventListener("click", async () => {
       const dupQ = query(
         collection(db, "wishlists"),
         where("date", "==", selectedDate),
-        where("court", "==", selectedCourt),
+        where("court", "==", normalizedKey(selectedCourt)),
         where("slotId", "==", selectedSlot.id),
-        where("phone", "==", phoneRaw)
+        where("phone", "==", phone) // use normalized phone from validation
       );
       const dupSnap = await getDocs(dupQ);
       const dupRows = [];
@@ -604,7 +638,7 @@ mConfirm?.addEventListener("click", async () => {
         phone,
         notes: notes || null,
         coupon: coupon || null,
-        court: selectedCourt,
+        court: normalizedKey(selectedCourt),
         slotId: selectedSlot.id,
         slotLabel: selectedSlot.label,
         date: selectedDate,
@@ -634,13 +668,14 @@ mConfirm?.addEventListener("click", async () => {
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 courtPicker?.addEventListener("click", ()=> hide(confirmCard));
 
-/* ---------- court selection ---------- */
+/* ---------- court selection (normalize selectedCourt) ---------- */
 courtPicker?.addEventListener("click", (ev) => {
   const btn = ev.target.closest("button[data-id]");
   if (!btn) return;
   $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
   btn.classList.add("selected-court", "ring-2", "ring-emerald-400");
-  selectedCourt = btn.getAttribute("data-id");
+  // normalize selection so it matches DB values
+  selectedCourt = normalizedKey(btn.getAttribute("data-id"));
   hide(confirmCard);
   renderSlots();
 });
@@ -651,7 +686,7 @@ window.addEventListener("load", () => {
     const first = courtPicker?.querySelector("button[data-id]");
     if (first) {
       first.classList.add("selected-court", "ring-2", "ring-emerald-400");
-      selectedCourt = first.getAttribute("data-id");
+      selectedCourt = normalizedKey(first.getAttribute("data-id"));
     }
   }
   renderSlots();
