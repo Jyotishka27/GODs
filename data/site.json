@@ -8,6 +8,8 @@
     "lat": 22.594,
     "lng": 88.479
   },
+  "currency": "INR",
+  "timezone": "Asia/Kolkata",
   "courts": [
     {
       "id": "5A",
@@ -16,7 +18,9 @@
       "durationMins": 60,
       "basePrice": 1500,
       "resourceId": "main-pitch",
-      "units": 1
+      "units": 1,
+      "minPlayers": 6,
+      "maxPlayers": 11
     },
     {
       "id": "5B",
@@ -25,7 +29,9 @@
       "durationMins": 60,
       "basePrice": 1500,
       "resourceId": "main-pitch",
-      "units": 1
+      "units": 1,
+      "minPlayers": 6,
+      "maxPlayers": 11
     },
     {
       "id": "7A",
@@ -34,7 +40,9 @@
       "durationMins": 60,
       "basePrice": 2500,
       "resourceId": "main-pitch",
-      "units": 2
+      "units": 2,
+      "minPlayers": 11,
+      "maxPlayers": 22
     },
     {
       "id": "CRK",
@@ -43,16 +51,23 @@
       "durationMins": 60,
       "basePrice": 2500,
       "resourceId": "main-pitch",
-      "units": 2
+      "units": 2,
+      "minPlayers": 11,
+      "maxPlayers": 22
     }
   ],
   "resourceCapacity": {
     "main-pitch": 2
   },
+  "resourceCapacityNote": "resourceCapacity = number of concurrent bookings the physical resource can host (e.g., main-pitch can host 2 halves simultaneously). If you intended this to be total units across courts, set to 6.",
   "hours": {
     "open": 6,
     "close": 23
   },
+  "slotIntervalMins": 60,
+  "defaultDurationMins": 60,
+  "minBookingNoticeMins": 60,
+  "maxAdvanceDays": 90,
   "peakHours": {
     "start": 17,
     "end": 22,
@@ -74,6 +89,12 @@
     "Respect your slot timing; buffers are enforced."
   ],
   "refundPolicy": "Free reschedule up to 6 hours prior. Refunds (if any) are processed to original method within 5–7 business days.",
+  "cancellationPolicy": {
+    "fullRefundBeforeHours": 24,
+    "partialRefundBeforeHours": 6,
+    "partialRefundPercent": 50,
+    "noRefundWithinHours": 6
+  },
   "coupons": [
     {
       "code": "WELCOME100",
@@ -90,9 +111,13 @@
       "expires": "2099-12-31"
     }
   ],
+  "taxPercent": 0,
   "sms": {
     "enabled": true,
     "endpoint": "https://your-serverless.example.com/send-sms",
     "authHeader": "Bearer YOUR_KEY_IF_NEEDED"
+  },
+  "whatsappTemplate": {
+    "bookingConfirmation": "Hi {{name}}, your booking for {{court}} on {{date}} at {{slot}} is confirmed. Booking ID: {{id}}."
   }
 }
