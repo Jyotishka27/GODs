@@ -89,7 +89,7 @@ function generateSlots() {
 const ALL_SLOTS = generateSlots();
 
 /* ---------- Prices ---------- */
-const PRICE_BY_COURT = { "5A": 600, "7A": 900, "CRK": 1500 };
+const PRICE_BY_COURT = { "5A": 1500, "7A": 2500, "CRK": 2500 };
 
 /* ---------- Court meta (edit to match your actual court data-ids) ----------
  - Each court id -> type: "half" | "full" | "cricket"
