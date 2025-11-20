@@ -1,4 +1,4 @@
-// scripts/app.js (patched: ensure selectedCourt/date initialization + debug logs)
+// scripts/app.js (patched to update Selected Pitch UI with name, dims & price)
 // Booking + Wishlist front-end using Firestore (no auth)
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
@@ -12,7 +12,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-/* ---------- Firebase config (unchanged) ---------- */
+/* ---------- Firebase config ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
@@ -25,7 +25,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-/* ---------- Utility helpers ---------- */
+/* ---------- Utility functions ---------- */
 const $ = (sel, el = document) => (el || document).querySelector(sel);
 const $$ = (sel, el = document) => Array.from((el || document).querySelectorAll(sel));
 const show = el => el?.classList.remove("hidden");
@@ -50,7 +50,9 @@ function toast(msg, opts = {}) {
     `;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), opts.duration || 6000);
-  } catch (e) { console.warn("toast failed", e); }
+  } catch (e) {
+    console.warn("toast failed", e);
+  }
 }
 
 function fmtDateISO(d) {
@@ -65,7 +67,7 @@ function niceWhen(dateStr, slotLabel) {
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-/* ---------- Slots, pricing, court metadata ---------- */
+/* ---------- Slot generation ---------- */
 const OPEN_HOUR = 6;
 const CLOSE_HOUR = 23;
 const BUFFER_MIN = 10;
@@ -75,27 +77,31 @@ function generateSlots() {
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
     const start = `${String(h).padStart(2, "0")}:00`;
     const end = `${String(h + 1).padStart(2, "0")}:00`;
+    // hyphen used consistently in id/label
     slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
 }
 const ALL_SLOTS = generateSlots();
 
+/* ---------- Prices ---------- */
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 
+/* ---------- Court meta (edit to match your actual court data-ids) ---------- */
 const COURT_META = {
-  "5A": { type: "half", label: "Half A" },
-  "5B": { type: "half", label: "Half B" },
-  "7A": { type: "full", label: "Full Ground" },
-  "CRK": { type: "cricket", label: "Cricket (Full)" }
+  "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
+  "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
+  "7A": { type: "full", label: "Full Ground", dims: "110×90" },
+  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" }
 };
 
 function normalizedKey(val) {
   return (val === undefined || val === null) ? "" : String(val).trim().toUpperCase();
 }
+
 function metaFor(courtId) {
   const key = normalizedKey(courtId);
-  return COURT_META[key] || { type: "unknown", label: key || courtId };
+  return COURT_META[key] || { type: "unknown", label: key || courtId, dims: "" };
 }
 
 /* ---------- occupancy helpers ---------- */
@@ -109,12 +115,14 @@ function computeSlotOccupancy(bookingDocs) {
     const s = (m[slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
     const copy = { ...b, court: courtId };
     s.bookings.push(copy);
-    if (b.status === "cancelled") return;
+    if (b.status === "cancelled") return; // ignore cancelled
+
     const meta = metaFor(courtId);
     if (meta.type === "half") s.halves.add(courtId);
     else if (meta.type === "full") s.full = true;
     else if (meta.type === "cricket") s.cricket = true;
   });
+
   return m;
 }
 
@@ -164,9 +172,9 @@ const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
-/* ---------- STATE (fixed defaults) ---------- */
+/* ---------- state ---------- */
 // Default to Half A so slots appear immediately (safe default)
-let selectedCourt = normalizedKey('5A');   // default selection
+let selectedCourt = normalizedKey('5A');   // '5A' -> Half Ground A
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -206,10 +214,17 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 async function fetchBookingsForDate(dateISO) {
   if (!dateISO) return [];
   try {
-    const q = query(collection(db, "bookings"), where("date", "==", dateISO));
+    const q = query(
+      collection(db, "bookings"),
+      where("date", "==", dateISO)
+    );
     const snap = await getDocs(q);
     const docs = [];
-    snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
+    snap.forEach(d => {
+      const data = d.data();
+      data._id = d.id;
+      docs.push(data);
+    });
     return docs;
   } catch (err) {
     console.error("fetchBookingsForDate err", err);
@@ -217,13 +232,22 @@ async function fetchBookingsForDate(dateISO) {
     return [];
   }
 }
+
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
-    const q = query(collection(db, "wishlists"), where("date", "==", dateISO), where("court", "==", normalizedKey(courtId)));
+    const q = query(
+      collection(db, "wishlists"),
+      where("date", "==", dateISO),
+      where("court", "==", normalizedKey(courtId))
+    );
     const snap = await getDocs(q);
     const docs = [];
-    snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
+    snap.forEach(d => {
+      const data = d.data();
+      data._id = d.id;
+      docs.push(data);
+    });
     return docs;
   } catch (err) {
     console.error("fetchWishlistsFor err", err);
@@ -232,12 +256,11 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- renderSlots (defensive, with debug) ---------- */
+/* ---------- Slot rendering (enforces mutual-exclusion rules) ---------- */
 async function renderSlots() {
   if (!slotList) return;
-  // ensure we have a current date from UI
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
-  console.debug("renderSlots called — selectedCourt:", selectedCourt, "selectedDate:", selectedDate);
+  console.debug("renderSlots - selectedCourt:", selectedCourt, "selectedDate:", selectedDate);
 
   slotList.innerHTML = "";
 
@@ -258,7 +281,8 @@ async function renderSlots() {
   }
 
   const occupancy = computeSlotOccupancy(bookingsAll);
-  const wishlistMap = (wishlists || []).reduce((acc, w) => {
+
+  const wishlistMap = wishlists.reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
     if (!acc[w.slotId]) acc[w.slotId] = [];
     acc[w.slotId].push(w);
@@ -276,6 +300,7 @@ async function renderSlots() {
 
     if (!avail.allowed) {
       right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
+
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
@@ -283,15 +308,18 @@ async function renderSlots() {
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
       }
+
       const wishBtn = document.createElement("button");
       wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
       wishBtn.textContent = "Wishlist";
+      wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
         const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
         preferredBookingId = occBooking?._id ?? null;
         openWishlistModal(s, preferredBookingId);
       });
       right.appendChild(wishBtn);
+
     } else {
       const btn = document.createElement("button");
       btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
@@ -314,8 +342,11 @@ async function renderSlots() {
   });
 }
 
-/* ---------- modal helpers (unchanged) ---------- */
-function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
+/* ---------- Modal flow (improved wishlist modal UX + validation) ---------- */
+function showFieldError(fieldEl, message) {
+  if (!fieldEl) return;
+  console.log("field error", fieldEl, message);
+}
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
   if (!mConfirm) return;
@@ -330,17 +361,22 @@ function setConfirmLoading(isLoading) {
     mConfirm.classList.remove("opacity-70", "cursor-not-allowed");
   }
 }
-
 function validateModalFields() {
   clearFieldErrors();
   const name = mName?.value?.trim() || "";
   const phone = mPhone?.value?.trim() || "";
-  if (name.length < 2) { showFieldError(mName, "Please enter your full name (min 2 characters)."); return { ok: false, reason: "name" }; }
-  if (!/^\+?\d{8,15}$/.test(phone)) { showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91..."); return { ok: false, reason: "phone" }; }
+
+  if (name.length < 2) {
+    showFieldError(mName, "Please enter your full name (min 2 characters).");
+    return { ok: false, reason: "name" };
+  }
+  if (!/^\+?\d{8,15}$/.test(phone)) {
+    showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91...");
+    return { ok: false, reason: "phone" };
+  }
   return { ok: true, name, phone };
 }
 
-/* ---------- booking & wishlist flows (unchanged) ---------- */
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -353,6 +389,7 @@ function openBookingModal(slot) {
   resetModalFields();
   openModal();
 }
+
 function openWishlistModal(slot, prefBookingId = null) {
   modalMode = "wishlist";
   selectedSlot = slot;
@@ -366,6 +403,7 @@ function openWishlistModal(slot, prefBookingId = null) {
   openModal();
   setTimeout(()=> { mName?.focus(); }, 120);
 }
+
 function openModal() { modal?.classList.remove("hidden"); }
 function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
 function resetModalFields() {
@@ -381,19 +419,25 @@ function resetModalFields() {
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
+/* ---------- Confirm handler (booking + wishlist) with rule-based pre-check ---------- */
 mConfirm?.addEventListener("click", async () => {
+  const nameRaw = mName?.value?.trim();
+  const phoneRaw = mPhone?.value?.trim();
+  const coupon = mCoupon?.value?.trim();
+  const notes = mNotes?.value?.trim();
+
   const v = validateModalFields();
   if (!v.ok) {
     if (v.reason === "name") toast("Please enter your name.", { error: true });
     if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
     return;
   }
-  const { name, phone } = v;
-  const coupon = mCoupon?.value?.trim();
-  const notes = mNotes?.value?.trim();
+  const name = v.name;
+  const phone = v.phone;
 
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a pitch and date first."); }
 
+  // normalized court used for writes and checks
   const normCourt = normalizedKey(selectedCourt);
 
   if (modalMode === "booking") {
@@ -412,23 +456,48 @@ mConfirm?.addEventListener("click", async () => {
     };
 
     try {
-      // pre-check conflicts for this slot across all courts
-      const conflictQ = query(collection(db, "bookings"), where("date", "==", selectedDate), where("slotId", "==", selectedSlot.id));
-      const conflictSnap = await getDocs(conflictQ);
-      const existing = [];
-      conflictSnap.forEach(d => { const data = d.data(); data._id = d.id; existing.push(data); });
+      // STRONGER PRE-CHECK: fetch all bookings for this date+slot (across courts) and enforce rules
+      try {
+        const conflictQ = query(
+          collection(db, "bookings"),
+          where("date", "==", selectedDate),
+          where("slotId", "==", selectedSlot.id)
+        );
+        const conflictSnap = await getDocs(conflictQ);
+        const existing = [];
+        conflictSnap.forEach(d => {
+          const data = d.data();
+          data._id = d.id;
+          existing.push(data);
+        });
 
-      const occMap = computeSlotOccupancy(existing);
-      const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
-      if (!availabilityCheck.allowed) {
-        alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
-        closeModalFn();
-        renderSlots();
+        // compute occupancy from existing bookings for this single slot
+        const occMap = computeSlotOccupancy(existing);
+        const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
+        if (!availabilityCheck.allowed) {
+          alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
+          closeModalFn();
+          renderSlots();
+          return;
+        }
+      } catch (qerr) {
+        console.error("Conflict-check failed", qerr);
+        const qmsg = qerr?.message || String(qerr);
+        if (qmsg.includes("requires an index")) {
+          toast("Firestore requires an index for booking-check. Click console link to create it.", { error: true, duration: 8000 });
+        } else {
+          toast("Could not verify slot availability — try again.", { error: true, duration: 8000 });
+        }
         return;
       }
 
+      // No conflict — proceed to write booking
       setConfirmLoading(true);
+      console.group("Booking write start (Firestore)");
+      console.log("Booking object:", booking);
       const ref = await addDoc(collection(db, "bookings"), booking);
+      console.log("BOOKING WRITE SUCCESS:", ref.id);
+      console.groupEnd();
 
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
@@ -440,31 +509,41 @@ mConfirm?.addEventListener("click", async () => {
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
+
       renderSlots();
+
     } catch (err) {
-      console.error("Booking failed", err);
-      toast("Booking failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
-      alert("Booking failed — check console. Error: " + (err?.message || String(err)));
+      console.group("Booking write FAILED");
+      console.error(err);
+      const emsg = err?.message || String(err);
+      toast("Booking failed: " + emsg, { error: true, duration: 8000 });
+      alert("Booking failed — check console. Error: " + emsg);
+      console.groupEnd();
     } finally {
       setConfirmLoading(false);
     }
     return;
   }
 
-  // wishlist handling
+  // wishlist mode: validate + duplicate-check on Firestore then save
   if (modalMode === "wishlist") {
     setConfirmLoading(true);
     try {
+      // Check duplicates: same phone, date, court, slotId
       const dupQ = query(
         collection(db, "wishlists"),
         where("date", "==", selectedDate),
         where("court", "==", normalizedKey(selectedCourt)),
         where("slotId", "==", selectedSlot.id),
-        where("phone", "==", phone)
+        where("phone", "==", phone) // use normalized phone from validation
       );
       const dupSnap = await getDocs(dupQ);
       const dupRows = [];
-      dupSnap.forEach(d => { const dt = d.data(); dt._id = d.id; dupRows.push(dt); });
+      dupSnap.forEach(d => {
+        const dt = d.data();
+        dt._id = d.id;
+        dupRows.push(dt);
+      });
       if (dupRows.length) {
         toast("You are already on the wishlist for this slot.", { duration: 5000 });
         setConfirmLoading(false);
@@ -490,10 +569,12 @@ mConfirm?.addEventListener("click", async () => {
       toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
       closeModalFn();
       renderSlots();
+
     } catch (err) {
       console.error("Wishlist save failed", err);
-      toast("Wishlist save failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
-      alert("Wishlist save failed — check console. Error: " + (err?.message || String(err)));
+      const emsg = err?.message || String(err);
+      toast("Wishlist save failed: " + emsg, { error: true, duration: 8000 });
+      alert("Wishlist save failed — check console. Error: " + emsg);
     } finally {
       setConfirmLoading(false);
     }
@@ -501,19 +582,24 @@ mConfirm?.addEventListener("click", async () => {
   }
 });
 
-/* ---------- pitch selector (single source of truth) ---------- */
+/* ---------- hide confirm card when date changes ---------- */
+dateInput?.addEventListener("change", ()=> hide(confirmCard));
+
+/* ---------- Pitch selector integration (vanilla) ---------- */
 /*
- - Renders SVG inside #pitchSelectorContainer and sets selectedCourt when user chooses
- - Preview path uses the uploaded file (local path that your pipeline will transform):
-   /mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png
+ - Renders an interactive SVG pitch into #pitchSelectorContainer
+ - Maps:
+    half-left -> 5A
+    half-right -> 5B
+    full -> 7A
+    full-cricket -> CRK
+ - Also updates the small status panel via window.__GODsTurf.updateSelectedUI(pitchLabel, price)
 */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
-  if (!container) {
-    console.debug("PitchSelector container not found");
-    return;
-  }
+  if (!container) return;
 
+  // uploaded preview image path (will be transformed by your pipeline)
   const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
 
   container.innerHTML = `
@@ -527,6 +613,7 @@ function initPitchSelector() {
           <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
         </div>
       </div>
+
       <div class="relative flex flex-col md:flex-row gap-4">
         <div class="flex-1 flex justify-center">
           <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
@@ -536,23 +623,29 @@ function initPitchSelector() {
                 <stop offset="100%" stop-color="#2aa02a"/>
               </linearGradient>
             </defs>
+
             <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
+
+            <!-- center -->
             <line x1="600" y1="40" x2="600" y2="760" stroke="#fff" stroke-width="3"/>
             <circle cx="600" cy="400" r="90" fill="none" stroke="#fff" stroke-width="3"/>
+
+            <!-- penalty boxes & goals -->
             <rect x="40" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
             <rect x="980" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
             <rect x="10" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
             <rect x="1160" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
 
-            <!-- FULL area covers whole pitch; halves sit after so they capture clicks on their side -->
+            <!-- interactive regions -->
             <rect id="area-full" x="40" y="40" width="1120" height="720" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
-            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" cursor="pointer" />
+            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
             <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
             <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
 
             <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
             <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
 
+            <!-- selection highlight -->
             <g id="selectionHighlight"></g>
           </svg>
         </div>
@@ -568,17 +661,24 @@ function initPitchSelector() {
     </div>
   `;
 
+  // mapping pitch -> courtId and a friendly label + dims
   const pitchToCourt = {
-    "half-left": "5A",
-    "half-right": "5B",
-    "full": "7A",
-    "full-cricket": "CRK"
+    "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
+    "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
+    "full": { id: "7A", label: "Full Ground", dims: COURT_META["7A"].dims },
+    "full-cricket": { id: "CRK", label: "Full Ground (Cricket)", dims: COURT_META["CRK"].dims }
   };
 
   const highlight = container.querySelector("#selectionHighlight");
-  function clearHighlights() { while (highlight.firstChild) highlight.removeChild(highlight.firstChild); $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600")); }
+
+  function clearHighlights() {
+    while (highlight.firstChild) highlight.removeChild(highlight.firstChild);
+    $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600"));
+  }
+
   function showHighlight(type) {
     clearHighlights();
+
     if (type === "half-left") {
       const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
       r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
@@ -606,15 +706,43 @@ function initPitchSelector() {
     }
   }
 
+  function updateSelectedPanel(courtKey) {
+    // produce friendly label + dims and price
+    const meta = metaFor(courtKey);
+    const labelWithDims = meta.label + (meta.dims ? ` · ${meta.dims}` : "");
+    const price = PRICE_BY_COURT[courtKey] || 0;
+
+    // update small panel in index.html if helper exists
+    try {
+      if (window && window.__GODsTurf && typeof window.__GODsTurf.updateSelectedUI === "function") {
+        window.__GODsTurf.updateSelectedUI(labelWithDims, price);
+      } else {
+        // fallback: directly update DOM nodes if present
+        const s = document.getElementById('selectedPitch');
+        const p = document.getElementById('selectedPrice');
+        if (s) s.textContent = labelWithDims;
+        if (p) p.textContent = price ? `₹${price}` : '—';
+      }
+    } catch (e) {
+      console.warn("updateSelectedPanel failed", e);
+    }
+  }
+
   function setSelectedByPitch(pitchKey) {
     if (!pitchToCourt[pitchKey]) return;
     showHighlight(pitchKey);
-    selectedCourt = normalizedKey(pitchToCourt[pitchKey]);
+
+    const target = pitchToCourt[pitchKey];
+    selectedCourt = normalizedKey(target.id);
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-    console.debug("Pitch selected:", pitchKey, "mapped court:", selectedCourt, "amount:", selectedAmount);
-    renderSlots();
+    // update the selected UI panel (label + dims, price)
+    updateSelectedPanel(selectedCourt);
+
+    // re-render slots to reflect new selection
+    try { renderSlots(); } catch (e) { console.warn("renderSlots not available yet", e); }
   }
 
+  // wire area events
   const areaFull = container.querySelector("#area-full");
   const areaCricket = container.querySelector("#area-cricket");
   const areaLeft = container.querySelector("#area-left");
@@ -632,21 +760,25 @@ function initPitchSelector() {
     });
   });
 
-  // reflect current default selection visually
-  const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v]=k, acc), {});
+  // reflect existing selection visually & update panel
+  const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v.id]=k, acc), {});
   const mappedPitch = rev[normalizedKey(selectedCourt)];
-  if (mappedPitch) showHighlight(mappedPitch);
+  if (mappedPitch) {
+    showHighlight(mappedPitch);
+    // make sure the small panel shows the initial selection as well
+    updateSelectedPanel(selectedCourt);
+  }
 }
 
-/* ---------- initialization ---------- */
+/* ---------- initial setup ---------- */
 window.addEventListener("load", () => {
-  // ensure date is set
+  // ensure date input is seeded
   selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
-  // init pitch selector then render slots
-  try { initPitchSelector(); } catch (e) { console.error("initPitchSelector failed", e); }
-  // small delay safe-call to allow pitch UI to set selectedCourt if needed
+  try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
+
+  // small delay to ensure pitch selector has set the panel, then render slots
   setTimeout(() => {
     console.debug("Initial state before renderSlots:", { selectedCourt, selectedDate, selectedAmount });
     renderSlots();
