@@ -1,5 +1,6 @@
-// scripts/app.js (patched to update Selected Pitch UI with name, dims & price)
+// scripts/app.js (grouped slots: Midnight / Morning / Afternoon / Evening)
 // Booking + Wishlist front-end using Firestore (no auth)
+// Drop-in replacement for previous app.js
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -12,7 +13,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-/* ---------- Firebase config ---------- */
+/* ---------- Firebase config (unchanged) ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
@@ -50,9 +51,7 @@ function toast(msg, opts = {}) {
     `;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), opts.duration || 6000);
-  } catch (e) {
-    console.warn("toast failed", e);
-  }
+  } catch (e) { console.warn("toast failed", e); }
 }
 
 function fmtDateISO(d) {
@@ -67,27 +66,32 @@ function niceWhen(dateStr, slotLabel) {
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-/* ---------- Slot generation ---------- */
-const OPEN_HOUR = 6;
-const CLOSE_HOUR = 23;
+/* ---------- Slots, pricing, court metadata ---------- */
+/*
+  Updated to include midnight hours:
+  Midnight: 00:00 - 06:00
+  Morning: 06:00 - 12:00
+  Afternoon: 12:00 - 18:00
+  Evening: 18:00 - 24:00
+*/
+const OPEN_HOUR = 0;
+const CLOSE_HOUR = 24;
 const BUFFER_MIN = 10;
 
 function generateSlots() {
   const slots = [];
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-    const start = `${String(h).padStart(2, "0")}:00`;
-    const end = `${String(h + 1).padStart(2, "0")}:00`;
-    // hyphen used consistently in id/label
+    const start = `${String(h).padStart(2, '0')}:00`;
+    const endHour = (h + 1) % 24;
+    const end = `${String(endHour).padStart(2, '0')}:00`;
     slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
 }
 const ALL_SLOTS = generateSlots();
 
-/* ---------- Prices ---------- */
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 
-/* ---------- Court meta (edit to match your actual court data-ids) ---------- */
 const COURT_META = {
   "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
@@ -115,14 +119,12 @@ function computeSlotOccupancy(bookingDocs) {
     const s = (m[slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
     const copy = { ...b, court: courtId };
     s.bookings.push(copy);
-    if (b.status === "cancelled") return; // ignore cancelled
-
+    if (b.status === "cancelled") return;
     const meta = metaFor(courtId);
     if (meta.type === "half") s.halves.add(courtId);
     else if (meta.type === "full") s.full = true;
     else if (meta.type === "cricket") s.cricket = true;
   });
-
   return m;
 }
 
@@ -173,8 +175,8 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- state ---------- */
-// Default to Half A so slots appear immediately (safe default)
-let selectedCourt = normalizedKey('5A');   // '5A' -> Half Ground A
+// Default to Half A so slots appear immediately
+let selectedCourt = normalizedKey('5A');
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -214,17 +216,10 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 async function fetchBookingsForDate(dateISO) {
   if (!dateISO) return [];
   try {
-    const q = query(
-      collection(db, "bookings"),
-      where("date", "==", dateISO)
-    );
+    const q = query(collection(db, "bookings"), where("date", "==", dateISO));
     const snap = await getDocs(q);
     const docs = [];
-    snap.forEach(d => {
-      const data = d.data();
-      data._id = d.id;
-      docs.push(data);
-    });
+    snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
     return docs;
   } catch (err) {
     console.error("fetchBookingsForDate err", err);
@@ -232,22 +227,13 @@ async function fetchBookingsForDate(dateISO) {
     return [];
   }
 }
-
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
-    const q = query(
-      collection(db, "wishlists"),
-      where("date", "==", dateISO),
-      where("court", "==", normalizedKey(courtId))
-    );
+    const q = query(collection(db, "wishlists"), where("date", "==", dateISO), where("court", "==", normalizedKey(courtId)));
     const snap = await getDocs(q);
     const docs = [];
-    snap.forEach(d => {
-      const data = d.data();
-      data._id = d.id;
-      docs.push(data);
-    });
+    snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
     return docs;
   } catch (err) {
     console.error("fetchWishlistsFor err", err);
@@ -256,12 +242,29 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- Slot rendering (enforces mutual-exclusion rules) ---------- */
+/* ---------- helper: bucket slots into dayparts ---------- */
+function bucketSlots(slots) {
+  const buckets = {
+    midnight: [], // 00:00 - 05:59 (hours 0..5)
+    morning: [],  // 06:00 - 11:59 (hours 6..11)
+    afternoon: [],// 12:00 - 17:59 (hours 12..17)
+    evening: []   // 18:00 - 23:59 (hours 18..23)
+  };
+  slots.forEach(s => {
+    const h = s.startHour;
+    if (h >= 0 && h < 6) buckets.midnight.push(s);
+    else if (h >= 6 && h < 12) buckets.morning.push(s);
+    else if (h >= 12 && h < 18) buckets.afternoon.push(s);
+    else buckets.evening.push(s);
+  });
+  return buckets;
+}
+
+/* ---------- Slot rendering (grouped) ---------- */
 async function renderSlots() {
   if (!slotList) return;
+  // ensure selectedDate read from input
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
-  console.debug("renderSlots - selectedCourt:", selectedCourt, "selectedDate:", selectedDate);
-
   slotList.innerHTML = "";
 
   if (!selectedCourt) {
@@ -281,72 +284,100 @@ async function renderSlots() {
   }
 
   const occupancy = computeSlotOccupancy(bookingsAll);
-
-  const wishlistMap = wishlists.reduce((acc, w) => {
+  const wishlistMap = (wishlists || []).reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
     if (!acc[w.slotId]) acc[w.slotId] = [];
     acc[w.slotId].push(w);
     return acc;
   }, {});
 
-  ALL_SLOTS.forEach(s => {
-    const item = document.createElement("div");
-    item.className = "flex items-center justify-between p-2 border rounded-xl";
-    const left = document.createElement("div");
-    left.innerHTML = `<div class="font-medium">${s.label}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
-    const right = document.createElement("div");
+  // bucket ALL_SLOTS into the four dayparts
+  const buckets = bucketSlots(ALL_SLOTS);
 
-    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+  // render helper for a bucket
+  function renderBucket(title, items) {
+    const section = document.createElement("div");
+    section.className = "mb-4";
 
-    if (!avail.allowed) {
-      right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
+    const header = document.createElement("h4");
+    header.className = "font-semibold mb-2";
+    header.textContent = title;
+    section.appendChild(header);
 
-      const count = (wishlistMap[s.id] || []).length;
-      if (count > 0) {
-        const badge = document.createElement("span");
-        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
-        badge.textContent = `Wishlist · ${count}`;
-        right.appendChild(badge);
-      }
-
-      const wishBtn = document.createElement("button");
-      wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
-      wishBtn.textContent = "Wishlist";
-      wishBtn.title = "Add yourself to wishlist for this slot";
-      wishBtn.addEventListener("click", () => {
-        const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
-        preferredBookingId = occBooking?._id ?? null;
-        openWishlistModal(s, preferredBookingId);
-      });
-      right.appendChild(wishBtn);
-
-    } else {
-      const btn = document.createElement("button");
-      btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
-      btn.textContent = "Book";
-      btn.addEventListener("click", () => openBookingModal(s));
-      right.appendChild(btn);
-
-      const count = (wishlistMap[s.id] || []).length;
-      if (count > 0) {
-        const badge = document.createElement("span");
-        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
-        badge.textContent = `Wishlist · ${count}`;
-        right.appendChild(badge);
-      }
+    if (!items || items.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "text-sm text-gray-500";
+      empty.textContent = "No slots in this period.";
+      section.appendChild(empty);
+      return section;
     }
 
-    item.appendChild(left);
-    item.appendChild(right);
-    slotList.appendChild(item);
-  });
+    const list = document.createElement("div");
+    list.className = "space-y-2";
+    items.forEach(s => {
+      const item = document.createElement("div");
+      item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
+
+      const left = document.createElement("div");
+      left.innerHTML = `<div class="font-medium">${s.label}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
+
+      const right = document.createElement("div");
+
+      const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+
+      if (!avail.allowed) {
+        right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
+        const count = (wishlistMap[s.id] || []).length;
+        if (count > 0) {
+          const badge = document.createElement("span");
+          badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+          badge.textContent = `Wishlist · ${count}`;
+          right.appendChild(badge);
+        }
+        const wishBtn = document.createElement("button");
+        wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+        wishBtn.textContent = "Wishlist";
+        wishBtn.title = "Add yourself to wishlist for this slot";
+        wishBtn.addEventListener("click", () => {
+          const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
+          preferredBookingId = occBooking?._id ?? null;
+          openWishlistModal(s, preferredBookingId);
+        });
+        right.appendChild(wishBtn);
+      } else {
+        const btn = document.createElement("button");
+        btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
+        btn.textContent = "Book";
+        btn.addEventListener("click", () => openBookingModal(s));
+        right.appendChild(btn);
+
+        const count = (wishlistMap[s.id] || []).length;
+        if (count > 0) {
+          const badge = document.createElement("span");
+          badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+          badge.textContent = `Wishlist · ${count}`;
+          right.appendChild(badge);
+        }
+      }
+
+      item.appendChild(left);
+      item.appendChild(right);
+      list.appendChild(item);
+    });
+
+    section.appendChild(list);
+    return section;
+  }
+
+  // attach buckets in order: Midnight, Morning, Afternoon, Evening
+  slotList.appendChild(renderBucket("Midnight slots (00:00 — 06:00)", buckets.midnight));
+  slotList.appendChild(renderBucket("Morning slots (06:00 — 12:00)", buckets.morning));
+  slotList.appendChild(renderBucket("Afternoon slots (12:00 — 18:00)", buckets.afternoon));
+  slotList.appendChild(renderBucket("Evening slots (18:00 — 00:00)", buckets.evening));
 }
 
-/* ---------- Modal flow (improved wishlist modal UX + validation) ---------- */
-function showFieldError(fieldEl, message) {
-  if (!fieldEl) return;
-  console.log("field error", fieldEl, message);
-}
+/* ---------- Modal flow (unchanged) ---------- */
+function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
   if (!mConfirm) return;
@@ -365,15 +396,8 @@ function validateModalFields() {
   clearFieldErrors();
   const name = mName?.value?.trim() || "";
   const phone = mPhone?.value?.trim() || "";
-
-  if (name.length < 2) {
-    showFieldError(mName, "Please enter your full name (min 2 characters).");
-    return { ok: false, reason: "name" };
-  }
-  if (!/^\+?\d{8,15}$/.test(phone)) {
-    showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91...");
-    return { ok: false, reason: "phone" };
-  }
+  if (name.length < 2) { showFieldError(mName, "Please enter your full name (min 2 characters)."); return { ok: false, reason: "name" }; }
+  if (!/^\+?\d{8,15}$/.test(phone)) { showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91..."); return { ok: false, reason: "phone" }; }
   return { ok: true, name, phone };
 }
 
@@ -389,7 +413,6 @@ function openBookingModal(slot) {
   resetModalFields();
   openModal();
 }
-
 function openWishlistModal(slot, prefBookingId = null) {
   modalMode = "wishlist";
   selectedSlot = slot;
@@ -403,7 +426,6 @@ function openWishlistModal(slot, prefBookingId = null) {
   openModal();
   setTimeout(()=> { mName?.focus(); }, 120);
 }
-
 function openModal() { modal?.classList.remove("hidden"); }
 function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
 function resetModalFields() {
@@ -415,29 +437,23 @@ function resetModalFields() {
   clearFieldErrors();
   setConfirmLoading(false);
 }
-
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* ---------- Confirm handler (booking + wishlist) with rule-based pre-check ---------- */
+/* ---------- Confirm handler (booking + wishlist) ---------- */
 mConfirm?.addEventListener("click", async () => {
-  const nameRaw = mName?.value?.trim();
-  const phoneRaw = mPhone?.value?.trim();
-  const coupon = mCoupon?.value?.trim();
-  const notes = mNotes?.value?.trim();
-
   const v = validateModalFields();
   if (!v.ok) {
     if (v.reason === "name") toast("Please enter your name.", { error: true });
     if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
     return;
   }
-  const name = v.name;
-  const phone = v.phone;
+  const { name, phone } = v;
+  const coupon = mCoupon?.value?.trim();
+  const notes = mNotes?.value?.trim();
 
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a pitch and date first."); }
 
-  // normalized court used for writes and checks
   const normCourt = normalizedKey(selectedCourt);
 
   if (modalMode === "booking") {
@@ -456,48 +472,22 @@ mConfirm?.addEventListener("click", async () => {
     };
 
     try {
-      // STRONGER PRE-CHECK: fetch all bookings for this date+slot (across courts) and enforce rules
-      try {
-        const conflictQ = query(
-          collection(db, "bookings"),
-          where("date", "==", selectedDate),
-          where("slotId", "==", selectedSlot.id)
-        );
-        const conflictSnap = await getDocs(conflictQ);
-        const existing = [];
-        conflictSnap.forEach(d => {
-          const data = d.data();
-          data._id = d.id;
-          existing.push(data);
-        });
+      const conflictQ = query(collection(db, "bookings"), where("date", "==", selectedDate), where("slotId", "==", selectedSlot.id));
+      const conflictSnap = await getDocs(conflictQ);
+      const existing = [];
+      conflictSnap.forEach(d => { const data = d.data(); data._id = d.id; existing.push(data); });
 
-        // compute occupancy from existing bookings for this single slot
-        const occMap = computeSlotOccupancy(existing);
-        const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
-        if (!availabilityCheck.allowed) {
-          alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
-          closeModalFn();
-          renderSlots();
-          return;
-        }
-      } catch (qerr) {
-        console.error("Conflict-check failed", qerr);
-        const qmsg = qerr?.message || String(qerr);
-        if (qmsg.includes("requires an index")) {
-          toast("Firestore requires an index for booking-check. Click console link to create it.", { error: true, duration: 8000 });
-        } else {
-          toast("Could not verify slot availability — try again.", { error: true, duration: 8000 });
-        }
+      const occMap = computeSlotOccupancy(existing);
+      const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
+      if (!availabilityCheck.allowed) {
+        alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
+        closeModalFn();
+        renderSlots();
         return;
       }
 
-      // No conflict — proceed to write booking
       setConfirmLoading(true);
-      console.group("Booking write start (Firestore)");
-      console.log("Booking object:", booking);
       const ref = await addDoc(collection(db, "bookings"), booking);
-      console.log("BOOKING WRITE SUCCESS:", ref.id);
-      console.groupEnd();
 
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
@@ -509,41 +499,30 @@ mConfirm?.addEventListener("click", async () => {
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
-
       renderSlots();
-
     } catch (err) {
-      console.group("Booking write FAILED");
-      console.error(err);
-      const emsg = err?.message || String(err);
-      toast("Booking failed: " + emsg, { error: true, duration: 8000 });
-      alert("Booking failed — check console. Error: " + emsg);
-      console.groupEnd();
+      console.error("Booking failed", err);
+      toast("Booking failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
+      alert("Booking failed — check console. Error: " + (err?.message || String(err)));
     } finally {
       setConfirmLoading(false);
     }
     return;
   }
 
-  // wishlist mode: validate + duplicate-check on Firestore then save
+  // wishlist
   if (modalMode === "wishlist") {
     setConfirmLoading(true);
     try {
-      // Check duplicates: same phone, date, court, slotId
-      const dupQ = query(
-        collection(db, "wishlists"),
+      const dupQ = query(collection(db, "wishlists"),
         where("date", "==", selectedDate),
         where("court", "==", normalizedKey(selectedCourt)),
         where("slotId", "==", selectedSlot.id),
-        where("phone", "==", phone) // use normalized phone from validation
+        where("phone", "==", phone)
       );
       const dupSnap = await getDocs(dupQ);
       const dupRows = [];
-      dupSnap.forEach(d => {
-        const dt = d.data();
-        dt._id = d.id;
-        dupRows.push(dt);
-      });
+      dupSnap.forEach(d => { const dt = d.data(); dt._id = d.id; dupRows.push(dt); });
       if (dupRows.length) {
         toast("You are already on the wishlist for this slot.", { duration: 5000 });
         setConfirmLoading(false);
@@ -569,12 +548,10 @@ mConfirm?.addEventListener("click", async () => {
       toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
       closeModalFn();
       renderSlots();
-
     } catch (err) {
       console.error("Wishlist save failed", err);
-      const emsg = err?.message || String(err);
-      toast("Wishlist save failed: " + emsg, { error: true, duration: 8000 });
-      alert("Wishlist save failed — check console. Error: " + emsg);
+      toast("Wishlist save failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
+      alert("Wishlist save failed — check console. Error: " + (err?.message || String(err)));
     } finally {
       setConfirmLoading(false);
     }
@@ -585,21 +562,19 @@ mConfirm?.addEventListener("click", async () => {
 /* ---------- hide confirm card when date changes ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- Pitch selector integration (vanilla) ---------- */
-/*
- - Renders an interactive SVG pitch into #pitchSelectorContainer
- - Maps:
-    half-left -> 5A
-    half-right -> 5B
-    full -> 7A
-    full-cricket -> CRK
- - Also updates the small status panel via window.__GODsTurf.updateSelectedUI(pitchLabel, price)
+/* ---------- Pitch selector integration (keeps same behavior) ---------- */
+/* This function must exist in your app file — it injects the SVG and wires selection.
+   It also updates the small status panel via window.__GODsTurf.updateSelectedUI() if available.
+   Keep this function identical to the one you already have in the app (or paste your existing initPitchSelector here).
+   For brevity I will reuse the same implementation you already have; if you replaced it earlier, keep that version.
 */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
-  if (!container) return;
+  if (!container) {
+    console.debug("PitchSelector container not found");
+    return;
+  }
 
-  // uploaded preview image path (will be transformed by your pipeline)
   const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
 
   container.innerHTML = `
@@ -613,39 +588,23 @@ function initPitchSelector() {
           <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
         </div>
       </div>
-
       <div class="relative flex flex-col md:flex-row gap-4">
         <div class="flex-1 flex justify-center">
           <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
-            <defs>
-              <linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="#2f7a2f"/>
-                <stop offset="100%" stop-color="#2aa02a"/>
-              </linearGradient>
-            </defs>
-
+            <defs><linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2f7a2f"/><stop offset="100%" stop-color="#2aa02a"/></linearGradient></defs>
             <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
-
-            <!-- center -->
             <line x1="600" y1="40" x2="600" y2="760" stroke="#fff" stroke-width="3"/>
             <circle cx="600" cy="400" r="90" fill="none" stroke="#fff" stroke-width="3"/>
-
-            <!-- penalty boxes & goals -->
             <rect x="40" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
             <rect x="980" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
             <rect x="10" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
             <rect x="1160" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
-
-            <!-- interactive regions -->
             <rect id="area-full" x="40" y="40" width="1120" height="720" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
             <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
             <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
             <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
-
             <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
             <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
-
-            <!-- selection highlight -->
             <g id="selectionHighlight"></g>
           </svg>
         </div>
@@ -661,7 +620,6 @@ function initPitchSelector() {
     </div>
   `;
 
-  // mapping pitch -> courtId and a friendly label + dims
   const pitchToCourt = {
     "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
     "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
@@ -670,15 +628,9 @@ function initPitchSelector() {
   };
 
   const highlight = container.querySelector("#selectionHighlight");
-
-  function clearHighlights() {
-    while (highlight.firstChild) highlight.removeChild(highlight.firstChild);
-    $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600"));
-  }
-
+  function clearHighlights() { while (highlight.firstChild) highlight.removeChild(highlight.firstChild); $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600")); }
   function showHighlight(type) {
     clearHighlights();
-
     if (type === "half-left") {
       const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
       r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
@@ -707,42 +659,31 @@ function initPitchSelector() {
   }
 
   function updateSelectedPanel(courtKey) {
-    // produce friendly label + dims and price
     const meta = metaFor(courtKey);
     const labelWithDims = meta.label + (meta.dims ? ` · ${meta.dims}` : "");
     const price = PRICE_BY_COURT[courtKey] || 0;
-
-    // update small panel in index.html if helper exists
     try {
       if (window && window.__GODsTurf && typeof window.__GODsTurf.updateSelectedUI === "function") {
         window.__GODsTurf.updateSelectedUI(labelWithDims, price);
       } else {
-        // fallback: directly update DOM nodes if present
         const s = document.getElementById('selectedPitch');
         const p = document.getElementById('selectedPrice');
         if (s) s.textContent = labelWithDims;
         if (p) p.textContent = price ? `₹${price}` : '—';
       }
-    } catch (e) {
-      console.warn("updateSelectedPanel failed", e);
-    }
+    } catch (e) { console.warn("updateSelectedPanel failed", e); }
   }
 
   function setSelectedByPitch(pitchKey) {
     if (!pitchToCourt[pitchKey]) return;
     showHighlight(pitchKey);
-
     const target = pitchToCourt[pitchKey];
     selectedCourt = normalizedKey(target.id);
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-    // update the selected UI panel (label + dims, price)
     updateSelectedPanel(selectedCourt);
-
-    // re-render slots to reflect new selection
     try { renderSlots(); } catch (e) { console.warn("renderSlots not available yet", e); }
   }
 
-  // wire area events
   const areaFull = container.querySelector("#area-full");
   const areaCricket = container.querySelector("#area-cricket");
   const areaLeft = container.querySelector("#area-left");
@@ -760,25 +701,22 @@ function initPitchSelector() {
     });
   });
 
-  // reflect existing selection visually & update panel
+  // reflect existing selection visually & update small panel
   const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v.id]=k, acc), {});
   const mappedPitch = rev[normalizedKey(selectedCourt)];
   if (mappedPitch) {
     showHighlight(mappedPitch);
-    // make sure the small panel shows the initial selection as well
     updateSelectedPanel(selectedCourt);
   }
 }
 
 /* ---------- initial setup ---------- */
 window.addEventListener("load", () => {
-  // ensure date input is seeded
   selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
   try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
 
-  // small delay to ensure pitch selector has set the panel, then render slots
   setTimeout(() => {
     console.debug("Initial state before renderSlots:", { selectedCourt, selectedDate, selectedAmount });
     renderSlots();
