@@ -1,6 +1,5 @@
-// scripts/app.js (grouped slots: Midnight / Morning / Afternoon / Evening)
+// scripts/app.js (tabbed dayparts + AM/PM labels)
 // Booking + Wishlist front-end using Firestore (no auth)
-// Drop-in replacement for previous app.js
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -13,7 +12,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-/* ---------- Firebase config (unchanged) ---------- */
+/* ---------- Firebase config ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
@@ -26,7 +25,7 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-/* ---------- Utility functions ---------- */
+/* ---------- Utility ---------- */
 const $ = (sel, el = document) => (el || document).querySelector(sel);
 const $$ = (sel, el = document) => Array.from((el || document).querySelectorAll(sel));
 const show = el => el?.classList.remove("hidden");
@@ -54,11 +53,25 @@ function toast(msg, opts = {}) {
   } catch (e) { console.warn("toast failed", e); }
 }
 
+/* ---------- Date / Label helpers ---------- */
 function fmtDateISO(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
+}
+function to12HourLabel(slotId) {
+  // slotId like "06:00-07:00" -> "6:00 AM - 7:00 AM"
+  const [start, end] = slotId.split("-");
+  return `${to12(start)} - ${to12(end)}`;
+}
+function to12(t24) {
+  // "00:00" -> "12:00 AM", "12:00" -> "12:00 PM", "18:00" -> "6:00 PM"
+  const [hh, mm] = t24.split(":").map(Number);
+  const period = hh >= 12 ? "PM" : "AM";
+  let hour = hh % 12;
+  if (hour === 0) hour = 12;
+  return `${hour}:${String(mm).padStart(2, "0")} ${period}`;
 }
 function niceWhen(dateStr, slotLabel) {
   const d = new Date(dateStr + "T00:00:00");
@@ -66,14 +79,7 @@ function niceWhen(dateStr, slotLabel) {
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-/* ---------- Slots, pricing, court metadata ---------- */
-/*
-  Updated to include midnight hours:
-  Midnight: 00:00 - 06:00
-  Morning: 06:00 - 12:00
-  Afternoon: 12:00 - 18:00
-  Evening: 18:00 - 24:00
-*/
+/* ---------- Slots / meta ---------- */
 const OPEN_HOUR = 0;
 const CLOSE_HOUR = 24;
 const BUFFER_MIN = 10;
@@ -81,9 +87,9 @@ const BUFFER_MIN = 10;
 function generateSlots() {
   const slots = [];
   for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-    const start = `${String(h).padStart(2, '0')}:00`;
+    const start = `${String(h).padStart(2, "0")}:00`;
     const endHour = (h + 1) % 24;
-    const end = `${String(endHour).padStart(2, '0')}:00`;
+    const end = `${String(endHour).padStart(2, "0")}:00`;
     slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
   }
   return slots;
@@ -96,19 +102,18 @@ const COURT_META = {
   "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
   "7A": { type: "full", label: "Full Ground", dims: "110×90" },
-  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
+  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" }
 };
 
 function normalizedKey(val) {
   return (val === undefined || val === null) ? "" : String(val).trim().toUpperCase();
 }
-
 function metaFor(courtId) {
   const key = normalizedKey(courtId);
   return COURT_META[key] || { type: "unknown", label: key || courtId, dims: "" };
 }
 
-/* ---------- occupancy helpers ---------- */
+/* ---------- occupancy ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   bookingDocs.forEach(b => {
@@ -127,7 +132,6 @@ function computeSlotOccupancy(bookingDocs) {
   });
   return m;
 }
-
 function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
   const occ = occupancyMap[slotId] || { halves: new Set(), full: false, cricket: false, bookings: [] };
   const tmeta = metaFor(targetCourt);
@@ -155,7 +159,8 @@ function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
 
 /* ---------- DOM refs ---------- */
 const dateInput = $("#date");
-const slotList = $("#slotList");
+const slotTabs = $("#slotTabs");
+const slotPanel = $("#slotPanel");
 const modal = $("#modal");
 const closeModal = $("#closeModal");
 const mTitle = $("#m-title");
@@ -175,16 +180,16 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- state ---------- */
-// Default to Half A so slots appear immediately
-let selectedCourt = normalizedKey('5A');
+let selectedCourt = normalizedKey('5A');   // default half-left
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 
+let selectedBucket = "morning"; // default tab shown (morning)
 let modalMode = "booking";
 let preferredBookingId = null;
 
-/* ---------- set defaults & populate static UI ---------- */
+/* ---------- populate static ---------- */
 if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 
 (function populateStatic() {
@@ -242,13 +247,13 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- helper: bucket slots into dayparts ---------- */
+/* ---------- bucket util ---------- */
 function bucketSlots(slots) {
   const buckets = {
-    midnight: [], // 00:00 - 05:59 (hours 0..5)
-    morning: [],  // 06:00 - 11:59 (hours 6..11)
-    afternoon: [],// 12:00 - 17:59 (hours 12..17)
-    evening: []   // 18:00 - 23:59 (hours 18..23)
+    midnight: [], // 0..5
+    morning: [],  // 6..11
+    afternoon: [],// 12..17
+    evening: []   // 18..23
   };
   slots.forEach(s => {
     const h = s.startHour;
@@ -260,18 +265,12 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- Slot rendering (grouped) ---------- */
+/* ---------- render: tabs + active bucket ---------- */
 async function renderSlots() {
-  if (!slotList) return;
-  // ensure selectedDate read from input
+  if (!slotPanel || !slotTabs) return;
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
-  slotList.innerHTML = "";
 
-  if (!selectedCourt) {
-    slotList.innerHTML = `<div class="text-sm text-gray-500">Select a pitch to view slots.</div>`;
-    return;
-  }
-
+  // fetch bookings/wishlist
   let bookingsAll = [], wishlists = [];
   try {
     [bookingsAll, wishlists] = await Promise.all([
@@ -291,92 +290,132 @@ async function renderSlots() {
     return acc;
   }, {});
 
-  // bucket ALL_SLOTS into the four dayparts
   const buckets = bucketSlots(ALL_SLOTS);
 
-  // render helper for a bucket
-  function renderBucket(title, items) {
-    const section = document.createElement("div");
-    section.className = "mb-4";
-
-    const header = document.createElement("h4");
-    header.className = "font-semibold mb-2";
-    header.textContent = title;
-    section.appendChild(header);
-
-    if (!items || items.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "text-sm text-gray-500";
-      empty.textContent = "No slots in this period.";
-      section.appendChild(empty);
-      return section;
-    }
-
-    const list = document.createElement("div");
-    list.className = "space-y-2";
+  // Prepare counts per bucket (for tab badges): available / total
+  const bucketInfo = {};
+  Object.entries(buckets).forEach(([key, items]) => {
+    const total = items.length;
+    let available = 0;
     items.forEach(s => {
-      const item = document.createElement("div");
-      item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
-
-      const left = document.createElement("div");
-      left.innerHTML = `<div class="font-medium">${s.label}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
-
-      const right = document.createElement("div");
-
       const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
-
-      if (!avail.allowed) {
-        right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
-        const count = (wishlistMap[s.id] || []).length;
-        if (count > 0) {
-          const badge = document.createElement("span");
-          badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
-          badge.textContent = `Wishlist · ${count}`;
-          right.appendChild(badge);
-        }
-        const wishBtn = document.createElement("button");
-        wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
-        wishBtn.textContent = "Wishlist";
-        wishBtn.title = "Add yourself to wishlist for this slot";
-        wishBtn.addEventListener("click", () => {
-          const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
-          preferredBookingId = occBooking?._id ?? null;
-          openWishlistModal(s, preferredBookingId);
-        });
-        right.appendChild(wishBtn);
-      } else {
-        const btn = document.createElement("button");
-        btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
-        btn.textContent = "Book";
-        btn.addEventListener("click", () => openBookingModal(s));
-        right.appendChild(btn);
-
-        const count = (wishlistMap[s.id] || []).length;
-        if (count > 0) {
-          const badge = document.createElement("span");
-          badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
-          badge.textContent = `Wishlist · ${count}`;
-          right.appendChild(badge);
-        }
-      }
-
-      item.appendChild(left);
-      item.appendChild(right);
-      list.appendChild(item);
+      if (avail.allowed) available++;
     });
+    bucketInfo[key] = { total, available };
+  });
 
-    section.appendChild(list);
-    return section;
+  // Render tabs
+  slotTabs.innerHTML = "";
+  const tabOrder = [
+    { key: "midnight", title: "Midnight (12:00 AM–6:00 AM)" },
+    { key: "morning", title: "Morning (6:00 AM–12:00 PM)" },
+    { key: "afternoon", title: "Afternoon (12:00 PM–6:00 PM)" },
+    { key: "evening", title: "Evening (6:00 PM–12:00 AM)" }
+  ];
+  const tabsWrap = document.createElement("div");
+  tabsWrap.className = "flex gap-2 items-center flex-wrap";
+
+  tabOrder.forEach(t => {
+    const btn = document.createElement("button");
+    const isActive = (t.key === selectedBucket);
+    btn.className = `px-3 py-1 rounded-full border text-sm flex items-center gap-2 ${isActive ? 'bg-emerald-600 text-white' : 'bg-white'}`;
+    btn.setAttribute("data-bucket", t.key);
+    btn.innerHTML = `<span>${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
+    btn.addEventListener("click", () => {
+      selectedBucket = t.key;
+      renderSlots();
+    });
+    tabsWrap.appendChild(btn);
+  });
+  slotTabs.appendChild(tabsWrap);
+
+  // Render panel for selected bucket only
+  slotPanel.innerHTML = "";
+  const selectedItems = buckets[selectedBucket] || [];
+
+  const header = document.createElement("div");
+  header.className = "mb-3 flex items-center justify-between";
+  const headTitle = document.createElement("h4");
+  headTitle.className = "font-semibold";
+  const titleMap = {
+    midnight: "Midnight slots (12:00 AM — 6:00 AM)",
+    morning: "Morning slots (6:00 AM — 12:00 PM)",
+    afternoon: "Afternoon slots (12:00 PM — 6:00 PM)",
+    evening: "Evening slots (6:00 PM — 12:00 AM)"
+  };
+  headTitle.textContent = titleMap[selectedBucket] || "Slots";
+  header.appendChild(headTitle);
+  const summary = document.createElement("div");
+  summary.className = "text-sm text-gray-500";
+  summary.textContent = `Showing ${bucketInfo[selectedBucket].available} available / ${bucketInfo[selectedBucket].total} total`;
+  header.appendChild(summary);
+  slotPanel.appendChild(header);
+
+  if (!selectedItems.length) {
+    const empty = document.createElement("div");
+    empty.className = "text-sm text-gray-500";
+    empty.textContent = "No slots in this period.";
+    slotPanel.appendChild(empty);
+    return;
   }
 
-  // attach buckets in order: Midnight, Morning, Afternoon, Evening
-  slotList.appendChild(renderBucket("Midnight slots (00:00 — 06:00)", buckets.midnight));
-  slotList.appendChild(renderBucket("Morning slots (06:00 — 12:00)", buckets.morning));
-  slotList.appendChild(renderBucket("Afternoon slots (12:00 — 18:00)", buckets.afternoon));
-  slotList.appendChild(renderBucket("Evening slots (18:00 — 00:00)", buckets.evening));
+  const list = document.createElement("div");
+  list.className = "space-y-2";
+  selectedItems.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
+
+    const left = document.createElement("div");
+    left.innerHTML = `<div class="font-medium">${to12HourLabel(s.label)}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
+
+    const right = document.createElement("div");
+
+    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+
+    if (!avail.allowed) {
+      right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
+      const count = (wishlistMap[s.id] || []).length;
+      if (count > 0) {
+        const badge = document.createElement("span");
+        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.textContent = `Wishlist · ${count}`;
+        right.appendChild(badge);
+      }
+      const wishBtn = document.createElement("button");
+      wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+      wishBtn.textContent = "Wishlist";
+      wishBtn.title = "Add yourself to wishlist for this slot";
+      wishBtn.addEventListener("click", () => {
+        const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
+        preferredBookingId = occBooking?._id ?? null;
+        openWishlistModal(s, preferredBookingId);
+      });
+      right.appendChild(wishBtn);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
+      btn.textContent = "Book";
+      btn.addEventListener("click", () => openBookingModal(s));
+      right.appendChild(btn);
+
+      const count = (wishlistMap[s.id] || []).length;
+      if (count > 0) {
+        const badge = document.createElement("span");
+        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.textContent = `Wishlist · ${count}`;
+        right.appendChild(badge);
+      }
+    }
+
+    item.appendChild(left);
+    item.appendChild(right);
+    list.appendChild(item);
+  });
+
+  slotPanel.appendChild(list);
 }
 
-/* ---------- Modal flow (unchanged) ---------- */
+/* ---------- modal helpers (unchanged) ---------- */
 function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
@@ -401,6 +440,7 @@ function validateModalFields() {
   return { ok: true, name, phone };
 }
 
+/* ---------- booking + wishlist flows (unchanged) ---------- */
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -440,7 +480,6 @@ function resetModalFields() {
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
-/* ---------- Confirm handler (booking + wishlist) ---------- */
 mConfirm?.addEventListener("click", async () => {
   const v = validateModalFields();
   if (!v.ok) {
@@ -562,11 +601,11 @@ mConfirm?.addEventListener("click", async () => {
 /* ---------- hide confirm card when date changes ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- Pitch selector integration (keeps same behavior) ---------- */
-/* This function must exist in your app file — it injects the SVG and wires selection.
-   It also updates the small status panel via window.__GODsTurf.updateSelectedUI() if available.
-   Keep this function identical to the one you already have in the app (or paste your existing initPitchSelector here).
-   For brevity I will reuse the same implementation you already have; if you replaced it earlier, keep that version.
+/* ---------- pitch selector (unchanged) ---------- */
+/* Reuse the pitch selector you already have — implemented previously.
+   This function injects the SVG + quick buttons and updates the small status panel.
+   Keep it the same as the version you already dropped into the file earlier.
+   Below is the same implementation used before (keeps selection behavior).
 */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
@@ -677,6 +716,7 @@ function initPitchSelector() {
   function setSelectedByPitch(pitchKey) {
     if (!pitchToCourt[pitchKey]) return;
     showHighlight(pitchKey);
+
     const target = pitchToCourt[pitchKey];
     selectedCourt = normalizedKey(target.id);
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -710,7 +750,7 @@ function initPitchSelector() {
   }
 }
 
-/* ---------- initial setup ---------- */
+/* ---------- initial ---------- */
 window.addEventListener("load", () => {
   selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
@@ -718,7 +758,6 @@ window.addEventListener("load", () => {
   try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
 
   setTimeout(() => {
-    console.debug("Initial state before renderSlots:", { selectedCourt, selectedDate, selectedAmount });
     renderSlots();
   }, 80);
 });
