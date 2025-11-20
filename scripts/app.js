@@ -182,7 +182,6 @@ function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
 
 /* ---------- DOM refs ---------- */
 const dateInput = $("#date");
-const courtPicker = $("#courtPicker");
 const slotList = $("#slotList");
 const modal = $("#modal");
 const closeModal = $("#closeModal");
@@ -203,7 +202,7 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- state ---------- */
-let selectedCourt = null;
+let selectedCourt = null;   // will be set by pitch selector
 let selectedSlot = null;
 let selectedDate = null;
 let selectedAmount = 0;
@@ -316,7 +315,7 @@ async function renderSlots() {
   slotList.innerHTML = "";
   selectedDate = dateInput?.value;
   if (!selectedCourt) {
-    slotList.innerHTML = `<div class="text-sm text-gray-500">Select a court to view slots.</div>`;
+    slotList.innerHTML = `<div class="text-sm text-gray-500">Select a pitch to view slots.</div>`;
     return;
   }
 
@@ -332,11 +331,6 @@ async function renderSlots() {
     toast("Error fetching bookings/wishlists — check console", { error: true, duration: 8000 });
   }
 
-  // debug logs
-  console.log("renderSlots - selectedDate:", selectedDate, "selectedCourt:", selectedCourt);
-  console.log("bookings fetched (all):", bookingsAll);
-  console.log("wishlists fetched (for selectedCourt):", wishlists);
-
   // occupancy map built from all bookings for the date
   const occupancy = computeSlotOccupancy(bookingsAll);
 
@@ -346,19 +340,6 @@ async function renderSlots() {
     acc[w.slotId].push(w);
     return acc;
   }, {});
-  console.log("wishlistMap:", wishlistMap);
-
-  // debug final occupancy summary
-  try {
-    console.debug("Final occupancy summary:", Object.keys(occupancy).reduce((acc, k) => {
-      acc[k] = {
-        halves: Array.from(occupancy[k].halves),
-        full: occupancy[k].full,
-        cricket: occupancy[k].cricket
-      };
-      return acc;
-    }, {}));
-  } catch (e) { /* ignore */ }
 
   ALL_SLOTS.forEach(s => {
     const item = document.createElement("div");
@@ -420,14 +401,11 @@ async function renderSlots() {
 /* ---------- Modal flow (improved wishlist modal UX + validation) ---------- */
 
 function showFieldError(fieldEl, message) {
-  // placeholder for per-field inline error UI; right now, we just console.log
   if (!fieldEl) return;
   console.log("field error", fieldEl, message);
 }
 
-function clearFieldErrors() {
-  // placeholder - no-op for now
-}
+function clearFieldErrors() {}
 
 function setConfirmLoading(isLoading) {
   if (!mConfirm) return;
@@ -517,7 +495,7 @@ mConfirm?.addEventListener("click", async () => {
   const name = v.name;
   const phone = v.phone;
 
-  if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a court and date first."); }
+  if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a pitch and date first."); }
 
   // normalized court used for writes and checks
   const normCourt = normalizedKey(selectedCourt);
@@ -664,21 +642,8 @@ mConfirm?.addEventListener("click", async () => {
   }
 });
 
-/* ---------- hide confirm card when date/court changes ---------- */
+/* ---------- hide confirm card when date changes ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
-courtPicker?.addEventListener("click", ()=> hide(confirmCard));
-
-/* ---------- court selection (normalize selectedCourt) ---------- */
-courtPicker?.addEventListener("click", (ev) => {
-  const btn = ev.target.closest("button[data-id]");
-  if (!btn) return;
-  $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
-  btn.classList.add("selected-court", "ring-2", "ring-emerald-400");
-  // normalize selection so it matches DB values
-  selectedCourt = normalizedKey(btn.getAttribute("data-id"));
-  hide(confirmCard);
-  renderSlots();
-});
 
 /* ---------- Pitch selector integration (vanilla) ---------- */
 /*
@@ -688,14 +653,14 @@ courtPicker?.addEventListener("click", (ev) => {
     half-right -> 5B
     full -> 7A
     full-cricket -> CRK
- - Syncs selection to the courtPicker buttons and triggers renderSlots()
- - Uses the uploaded preview path provided by you (will be transformed to public URL in your build)
+ - Pitch is now the single source of truth (we removed the old courtPicker).
+ - Full ground clickable area now covers the entire pitch (x=40 width=1120 height=720).
 */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) return;
 
-  // uploaded file path (will be converted by your build/deploy pipeline)
+  // uploaded file path (will be transformed to a public URL by your build)
   const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
 
   container.innerHTML = `
@@ -720,6 +685,7 @@ function initPitchSelector() {
                 <stop offset="100%" stop-color="#2aa02a"/>
               </linearGradient>
             </defs>
+
             <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
 
             <!-- center -->
@@ -733,15 +699,16 @@ function initPitchSelector() {
             <rect x="1160" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
 
             <!-- interactive regions -->
+            <!-- FULL area now covers entire pitch; halves are defined after and sit on top -->
+            <rect id="area-full" x="40" y="40" width="1120" height="720" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
+            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
             <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
             <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
-            <rect id="area-full" x="140" y="140" width="920" height="520" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
-            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
 
             <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
             <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
 
-            <!-- selection highlight (placeholder, updated by JS) -->
+            <!-- selection highlight -->
             <g id="selectionHighlight"></g>
           </svg>
         </div>
@@ -765,14 +732,10 @@ function initPitchSelector() {
     "full-cricket": "CRK"
   };
 
-  // helpers to update visuals and app state
-  const svg = container.querySelector("#pitchSvg");
   const highlight = container.querySelector("#selectionHighlight");
 
   function clearHighlights() {
-    // remove children
     while (highlight.firstChild) highlight.removeChild(highlight.firstChild);
-    // un-style quick buttons
     $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600"));
   }
 
@@ -780,7 +743,6 @@ function initPitchSelector() {
     clearHighlights();
 
     if (type === "half-left") {
-      // translucent rect left
       const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
       r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
       r.setAttribute("rx","20"); r.setAttribute("fill","#ffffff33"); r.setAttribute("stroke","#0f923f"); r.setAttribute("stroke-width","6");
@@ -794,7 +756,7 @@ function initPitchSelector() {
       container.querySelector('button[data-pitch="half-right"]').classList.add("bg-green-600","text-white");
     } else if (type === "full") {
       const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
-      r.setAttribute("x","140"); r.setAttribute("y","140"); r.setAttribute("width","920"); r.setAttribute("height","520");
+      r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","1120"); r.setAttribute("height","720");
       r.setAttribute("rx","28"); r.setAttribute("fill","#ffffff55"); r.setAttribute("stroke","#0f923f"); r.setAttribute("stroke-width","8");
       highlight.appendChild(r);
       container.querySelector('button[data-pitch="full"]').classList.add("bg-green-600","text-white");
@@ -809,32 +771,25 @@ function initPitchSelector() {
 
   function setSelectedByPitch(pitchKey) {
     if (!pitchToCourt[pitchKey]) return;
-    // 1) visual
+    // visual
     showHighlight(pitchKey);
-
-    // 2) update selectedCourt & UI button states
-    const mapped = pitchToCourt[pitchKey];
-    // sync the courtPicker buttons
-    $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
-    const targetBtn = courtPicker.querySelector(`button[data-id="${mapped}"]`);
-    if (targetBtn) {
-      targetBtn.classList.add("selected-court", "ring-2", "ring-emerald-400");
-    }
-    selectedCourt = normalizedKey(mapped);
+    // update selectedCourt (single source of truth)
+    selectedCourt = normalizedKey(pitchToCourt[pitchKey]);
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     // re-render slots
     try { renderSlots(); } catch (e) { console.warn("renderSlots not available yet", e); }
   }
 
-  // wire click events for svg areas
-  const areaLeft = container.querySelector("#area-left");
-  const areaRight = container.querySelector("#area-right");
+  // wire areas (note order: full defined before halves so halves are on top in DOM)
   const areaFull = container.querySelector("#area-full");
   const areaCricket = container.querySelector("#area-cricket");
+  const areaLeft = container.querySelector("#area-left");
+  const areaRight = container.querySelector("#area-right");
 
-  areaLeft?.addEventListener("click", ()=> setSelectedByPitch("half-left"));
-  areaRight?.addEventListener("click", ()=> setSelectedByPitch("half-right"));
   areaFull?.addEventListener("click", ()=> setSelectedByPitch("full"));
   areaCricket?.addEventListener("click", ()=> setSelectedByPitch("full-cricket"));
+  areaLeft?.addEventListener("click", ()=> setSelectedByPitch("half-left"));
+  areaRight?.addEventListener("click", ()=> setSelectedByPitch("half-right"));
 
   // wire quick buttons
   $$(".pitch-btn", container).forEach(b => {
@@ -844,9 +799,11 @@ function initPitchSelector() {
     });
   });
 
-  // if page has an initial selectedCourt, reflect in pitch selector
-  if (selectedCourt) {
-    // reverse mapping: court->pitch
+  // default selection if not already set
+  if (!selectedCourt) {
+    setSelectedByPitch("half-left"); // default to Half A
+  } else {
+    // reflect existing selection visually
     const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v]=k, acc), {});
     const mappedPitch = rev[normalizedKey(selectedCourt)];
     if (mappedPitch) showHighlight(mappedPitch);
@@ -855,14 +812,6 @@ function initPitchSelector() {
 
 /* ---------- initial setup ---------- */
 window.addEventListener("load", () => {
-  if (!selectedCourt) {
-    const first = courtPicker?.querySelector("button[data-id]");
-    if (first) {
-      first.classList.add("selected-court", "ring-2", "ring-emerald-400");
-      selectedCourt = normalizedKey(first.getAttribute("data-id"));
-    }
-  }
-
   // initialize pitch selector (safe to call even if container not present)
   try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
 
