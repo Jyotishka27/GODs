@@ -1,5 +1,5 @@
-// scripts/app.js (robust initialization: pitch selector + daypart tabs + AM/PM labels)
-// Drop-in replacement for existing scripts/app.js
+// scripts/app.js (updated: centered Pending confirmation / Booked UI; wishlist stays right)
+// Drop-in replacement for your existing scripts/app.js (robust initialization + status improvements)
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -258,6 +258,21 @@ function bucketSlots(slots) {
   return buckets;
 }
 
+/* ---------- helper: determine visible booking status for a slot ---------- */
+function determineSlotStatus(occupancy, slotId) {
+  // occupancy[slotId].bookings contains entries (status may be 'pending', 'confirmed', 'cancelled', etc.)
+  const occ = occupancy[slotId];
+  if (!occ || !occ.bookings || !occ.bookings.length) return { label: null, type: null };
+
+  // prefer 'pending' if any booking is pending; otherwise if any booking is confirmed/booked -> show Booked.
+  const statuses = occ.bookings.map(b => (b && b.status ? String(b.status).toLowerCase() : ""));
+  if (statuses.includes("pending")) return { label: "Pending confirmation", type: "pending" };
+  // treat 'confirmed' or 'booked' as final booked
+  if (statuses.includes("confirmed") || statuses.includes("booked") || statuses.includes("complete")) return { label: "Booked", type: "booked" };
+  // fallback: if any non-cancelled booking exists, show Pending confirmation (conservative)
+  return { label: "Pending confirmation", type: "pending" };
+}
+
 /* ---------- render slots (tabs) ---------- */
 async function renderSlots() {
   if (!slotPanel || !slotTabs) return;
@@ -353,17 +368,38 @@ async function renderSlots() {
   list.className = "space-y-2";
 
   selectedItems.forEach(s => {
+    // layout: left (time), middle (status or book button), right (wishlist)
     const item = document.createElement("div");
     item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
 
+    // left: time label
     const left = document.createElement("div");
+    left.className = "flex-0";
     left.innerHTML = `<div class="font-medium">${to12HourLabel(s.label)}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
 
-    const right = document.createElement("div");
-    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+    // middle: status or Book button (centered)
+    const middle = document.createElement("div");
+    middle.className = "flex-1 text-center";
 
+    // right: wishlist area
+    const right = document.createElement("div");
+    right.className = "flex-0";
+
+    // Decide availability & status
+    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
     if (!avail.allowed) {
-      right.innerHTML = `<div class="text-sm text-red-600">Booked</div>`;
+      // determine whether pending or booked
+      const st = determineSlotStatus(occupancy, s.id);
+      const label = st.label || "Booked";
+      const type = st.type || "booked";
+
+      // create centered pill
+      const pill = document.createElement("span");
+      pill.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${type === 'pending' ? 'bg-yellow-50 text-yellow-800 border border-yellow-200' : 'bg-red-50 text-red-700 border border-red-100'}`;
+      pill.textContent = label;
+      middle.appendChild(pill);
+
+      // wishlist (if any)
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
@@ -371,6 +407,7 @@ async function renderSlots() {
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
       }
+
       const wishBtn = document.createElement("button");
       wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
       wishBtn.textContent = "Wishlist";
@@ -381,12 +418,14 @@ async function renderSlots() {
         openWishlistModal(s, preferredBookingId);
       });
       right.appendChild(wishBtn);
+
     } else {
+      // available - show Book centered and wishlist to right (if any)
       const btn = document.createElement("button");
       btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
       btn.textContent = "Book";
       btn.addEventListener("click", () => openBookingModal(s));
-      right.appendChild(btn);
+      middle.appendChild(btn);
 
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
@@ -398,6 +437,7 @@ async function renderSlots() {
     }
 
     item.appendChild(left);
+    item.appendChild(middle);
     item.appendChild(right);
     list.appendChild(item);
   });
@@ -590,12 +630,7 @@ mConfirm?.addEventListener("click", async () => {
 /* ---------- hide confirm card on date change ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- PITCH SELECTOR: returns a setter so we can safely set selection before rendering ---------- */
-/*
-  Implementation injects the SVG + quick buttons into #pitchSelectorContainer.
-  It returns an object with a `setSelected(pitchKey)` function to allow the outer app
-  to set selection immediately and ensure renderSlots uses the value.
-*/
+/* ---------- PITCH SELECTOR (same as before) ---------- */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
@@ -649,7 +684,6 @@ function initPitchSelector() {
     </div>
   `;
 
-  // mapping
   const pitchToCourt = {
     "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
     "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
@@ -713,11 +747,9 @@ function initPitchSelector() {
     selectedCourt = normalizedKey(target.id);
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     updateSelectedPanel(selectedCourt);
-    // re-render slots when selection changes
     try { renderSlots(); } catch(e) { console.warn("renderSlots not ready", e); }
   }
 
-  // wire DOM areas: clicks on the svg invisible areas
   const areaFull = container.querySelector("#area-full");
   const areaCricket = container.querySelector("#area-cricket");
   const areaLeft = container.querySelector("#area-left");
@@ -735,10 +767,8 @@ function initPitchSelector() {
     });
   });
 
-  // expose a setter to outer scope so app can initialize selection synchronously
   return {
     setSelected: (pitchKey) => {
-      // if an invalid key, silently ignore
       if (!pitchToCourt[pitchKey]) return;
       setSelectedByPitch(pitchKey);
     }
@@ -747,26 +777,20 @@ function initPitchSelector() {
 
 /* ---------- initialization ---------- */
 window.addEventListener("load", async () => {
-  // ensure date value
   selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
-  // init pitch selector and get setter
   let selectorApi = { setSelected: (k)=>{} };
   try { selectorApi = initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
 
-  // set default selection (use selectorApi so highlights + updateSelectedUI run)
-  // prefer Half-left initially
   try {
     selectorApi.setSelected('half-left');
   } catch (e) {
-    // fallback — set selectedCourt manually
     selectedCourt = '5A';
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
   }
 
-  // a small delay to allow DOM paint, then render slots
   setTimeout(() => {
     try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
   }, 60);
