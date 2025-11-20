@@ -1,5 +1,8 @@
-// scripts/app.js (update: Book button moved to the right; status pill stays centered)
-// Drop-in replacement - keep all other files same
+// scripts/app.js (drop-in replacement)
+// Booking + Wishlist front-end using Firestore (no auth)
+// - Slot buckets, pitch selector, pending/confirmed status display
+// - Book button on right, status pill centered, wishlist on right
+// - Robust normalization of court keys to avoid halves blocking each other
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -102,26 +105,54 @@ const COURT_META = {
   "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" }
 };
 
+/* ---------- NORMALIZATION (robust) ---------- */
 function normalizedKey(val) {
-  return (val === undefined || val === null) ? "" : String(val).trim().toUpperCase();
-}
-function metaFor(courtId) {
-  const key = normalizedKey(courtId);
-  return COURT_META[key] || { type: "unknown", label: key || courtId, dims: "" };
+  // Defensive normalization: handle many common string forms and map to canonical keys.
+  if (val === undefined || val === null) return "";
+  let v = String(val).trim();
+
+  // remove whitespace and stray punctuation
+  const compact = v.replace(/[\s_\-]+/g, "").toUpperCase();
+
+  // direct canonical matches
+  if (/^5A$/.test(compact)) return "5A";
+  if (/^5B$/.test(compact)) return "5B";
+  if (/^7A$/.test(compact)) return "7A";
+  if (/^CRK$/.test(compact)) return "CRK";
+
+  // textual heuristics
+  if (/HALF.*LEFT|LEFTHALF|^LEFT$|HALFLEFT|LEFT/i.test(v)) return "5A";
+  if (/HALF.*RIGHT|RIGHTHALF|^RIGHT$|HALFRIGHT|RIGHT/i.test(v)) return "5B";
+  if (/FULL.*CRICKET|CRICKET|FULLCRICKET/i.test(v)) return "CRK";
+  if (/FULL|WHOLE|ENTIRE|FULLGROUND|FULL_GROUND|^7A$/i.test(v)) return "7A";
+
+  // fallback: strip to uppercase alphanumeric
+  const fallback = compact.replace(/[^A-Z0-9]/g, "");
+  return fallback;
 }
 
-/* ---------- occupancy helpers ---------- */
+function metaFor(courtId) {
+  const key = normalizedKey(courtId);
+  if (COURT_META[key]) return COURT_META[key];
+  if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground A", dims: "55×90" };
+  if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground B", dims: "55×90" };
+  if (/7A|FULL/.test(key)) return { type: "full", label: "Full Ground", dims: "110×90" };
+  if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" };
+  return { type: "unknown", label: key || String(courtId), dims: "" };
+}
+
+/* ---------- occupancy helpers (fixed) ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   bookingDocs.forEach(b => {
     if (!b || !b.slotId) return;
     const slotId = b.slotId;
-    const courtIdRaw = b.court ?? "";
-    const courtId = normalizedKey(courtIdRaw);
+    const rawCourt = b.court ?? b.courtId ?? b.selectedCourt ?? "";
+    const courtId = normalizedKey(rawCourt);
     const s = (m[slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
     const copy = { ...b, court: courtId };
     s.bookings.push(copy);
-    if (b.status === "cancelled") return;
+    if ((b.status || "").toLowerCase() === "cancelled") return;
     const meta = metaFor(courtId);
     if (meta.type === "half") s.halves.add(courtId);
     else if (meta.type === "full") s.full = true;
@@ -129,6 +160,7 @@ function computeSlotOccupancy(bookingDocs) {
   });
   return m;
 }
+
 function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
   const occ = occupancyMap[slotId] || { halves: new Set(), full: false, cricket: false, bookings: [] };
   const tmeta = metaFor(targetCourt);
@@ -177,7 +209,7 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- app state ---------- */
-let selectedCourt = normalizedKey('5A');
+let selectedCourt = normalizedKey('5A'); // canonical initial
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -186,7 +218,7 @@ let selectedBucket = "morning";
 let modalMode = "booking";
 let preferredBookingId = null;
 
-/* ---------- seed UI & static ---------- */
+/* ---------- seed static UI ---------- */
 if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 
 (function populateStatic() {
@@ -244,7 +276,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- bucket util ---------- */
+/* ---------- daypart bucket util ---------- */
 function bucketSlots(slots) {
   const buckets = { midnight: [], morning: [], afternoon: [], evening: [] };
   slots.forEach(s => {
@@ -257,7 +289,7 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- determine visible booking status ---------- */
+/* ---------- derive visible status ---------- */
 function determineSlotStatus(occupancy, slotId) {
   const occ = occupancy[slotId];
   if (!occ || !occ.bookings || !occ.bookings.length) return { label: null, type: null };
@@ -267,7 +299,7 @@ function determineSlotStatus(occupancy, slotId) {
   return { label: "Pending confirmation", type: "pending" };
 }
 
-/* ---------- render slots (tabs) ---------- */
+/* ---------- render slots UI ---------- */
 async function renderSlots() {
   if (!slotPanel || !slotTabs) return;
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
@@ -407,7 +439,7 @@ async function renderSlots() {
       right.appendChild(wishBtn);
 
     } else {
-      // available: middle remains empty; right contains Book button and wishlist badge (if any)
+      // available: right contains Book button and wishlist badge (if any)
       const bookBtn = document.createElement("button");
       bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
       bookBtn.textContent = "Book";
@@ -443,7 +475,7 @@ async function renderSlots() {
   slotPanel.appendChild(list);
 }
 
-/* ---------- modal & validation (unchanged) ---------- */
+/* ---------- modal & validation ---------- */
 function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
@@ -627,7 +659,7 @@ mConfirm?.addEventListener("click", async () => {
 /* ---------- hide confirm card on date change ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- PITCH SELECTOR (same as before) ---------- */
+/* ---------- PITCH SELECTOR ---------- */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
