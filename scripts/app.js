@@ -1,5 +1,5 @@
-// scripts/app.js (updated: centered Pending confirmation / Booked UI; wishlist stays right)
-// Drop-in replacement for your existing scripts/app.js (robust initialization + status improvements)
+// scripts/app.js (update: Book button moved to the right; status pill stays centered)
+// Drop-in replacement - keep all other files same
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -177,13 +177,12 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- app state ---------- */
-// default to half A (safe)
 let selectedCourt = normalizedKey('5A');
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 
-let selectedBucket = "morning"; // default tab
+let selectedBucket = "morning";
 let modalMode = "booking";
 let preferredBookingId = null;
 
@@ -258,18 +257,13 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- helper: determine visible booking status for a slot ---------- */
+/* ---------- determine visible booking status ---------- */
 function determineSlotStatus(occupancy, slotId) {
-  // occupancy[slotId].bookings contains entries (status may be 'pending', 'confirmed', 'cancelled', etc.)
   const occ = occupancy[slotId];
   if (!occ || !occ.bookings || !occ.bookings.length) return { label: null, type: null };
-
-  // prefer 'pending' if any booking is pending; otherwise if any booking is confirmed/booked -> show Booked.
   const statuses = occ.bookings.map(b => (b && b.status ? String(b.status).toLowerCase() : ""));
   if (statuses.includes("pending")) return { label: "Pending confirmation", type: "pending" };
-  // treat 'confirmed' or 'booked' as final booked
   if (statuses.includes("confirmed") || statuses.includes("booked") || statuses.includes("complete")) return { label: "Booked", type: "booked" };
-  // fallback: if any non-cancelled booking exists, show Pending confirmation (conservative)
   return { label: "Pending confirmation", type: "pending" };
 }
 
@@ -278,14 +272,12 @@ async function renderSlots() {
   if (!slotPanel || !slotTabs) return;
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
 
-  // defensive: ensure we have a valid selectedCourt
   if (!selectedCourt) {
     selectedCourt = '5A';
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
   }
 
-  // fetch bookings/wishlist
   let bookingsAll = [], wishlists = [];
   try {
     [bookingsAll, wishlists] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate, selectedCourt)]);
@@ -304,7 +296,6 @@ async function renderSlots() {
 
   const buckets = bucketSlots(ALL_SLOTS);
 
-  // counts
   const bucketInfo = {};
   Object.entries(buckets).forEach(([key, items]) => {
     const total = items.length;
@@ -335,7 +326,7 @@ async function renderSlots() {
   });
   slotTabs.appendChild(tabsWrap);
 
-  // render only chosen bucket
+  // render selected bucket
   slotPanel.innerHTML = "";
   const selectedItems = buckets[selectedBucket] || [];
   const header = document.createElement("div");
@@ -368,48 +359,44 @@ async function renderSlots() {
   list.className = "space-y-2";
 
   selectedItems.forEach(s => {
-    // layout: left (time), middle (status or book button), right (wishlist)
+    // left (time), middle (status), right (book + wishlist)
     const item = document.createElement("div");
     item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
 
-    // left: time label
     const left = document.createElement("div");
     left.className = "flex-0";
     left.innerHTML = `<div class="font-medium">${to12HourLabel(s.label)}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
 
-    // middle: status or Book button (centered)
     const middle = document.createElement("div");
     middle.className = "flex-1 text-center";
 
-    // right: wishlist area
     const right = document.createElement("div");
-    right.className = "flex-0";
+    right.className = "flex items-center gap-2";
 
-    // Decide availability & status
     const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+
     if (!avail.allowed) {
-      // determine whether pending or booked
+      // center: status pill (Pending / Booked)
       const st = determineSlotStatus(occupancy, s.id);
       const label = st.label || "Booked";
       const type = st.type || "booked";
 
-      // create centered pill
       const pill = document.createElement("span");
       pill.className = `inline-block px-3 py-1 rounded-full text-sm font-medium ${type === 'pending' ? 'bg-yellow-50 text-yellow-800 border border-yellow-200' : 'bg-red-50 text-red-700 border border-red-100'}`;
       pill.textContent = label;
       middle.appendChild(pill);
 
-      // wishlist (if any)
+      // right: wishlist (count + button)
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
-        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.className = "px-2 py-1 rounded-full text-xs border bg-white";
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
       }
 
       const wishBtn = document.createElement("button");
-      wishBtn.className = "ml-3 px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+      wishBtn.className = "px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
       wishBtn.addEventListener("click", () => {
@@ -420,19 +407,30 @@ async function renderSlots() {
       right.appendChild(wishBtn);
 
     } else {
-      // available - show Book centered and wishlist to right (if any)
-      const btn = document.createElement("button");
-      btn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
-      btn.textContent = "Book";
-      btn.addEventListener("click", () => openBookingModal(s));
-      middle.appendChild(btn);
+      // available: middle remains empty; right contains Book button and wishlist badge (if any)
+      const bookBtn = document.createElement("button");
+      bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
+      bookBtn.textContent = "Book";
+      bookBtn.addEventListener("click", () => openBookingModal(s));
+      right.appendChild(bookBtn);
 
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
-        badge.className = "ml-2 px-2 py-1 rounded-full text-xs border bg-white";
+        badge.className = "px-2 py-1 rounded-full text-xs border bg-white";
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
+      } else {
+        // allow user to join wishlist even when none exist yet
+        const wishBtn = document.createElement("button");
+        wishBtn.className = "px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+        wishBtn.textContent = "Wishlist";
+        wishBtn.title = "Add yourself to wishlist for this slot";
+        wishBtn.addEventListener("click", () => {
+          preferredBookingId = null;
+          openWishlistModal(s, null);
+        });
+        right.appendChild(wishBtn);
       }
     }
 
@@ -578,7 +576,6 @@ mConfirm?.addEventListener("click", async () => {
     return;
   }
 
-  // wishlist
   if (modalMode === "wishlist") {
     setConfirmLoading(true);
     try {
