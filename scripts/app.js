@@ -96,7 +96,7 @@ const COURT_META = {
   "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
   "7A": { type: "full", label: "Full Ground", dims: "110×90" },
-  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" }
+  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
 
 function normalizedKey(val) {
