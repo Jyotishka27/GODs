@@ -83,12 +83,7 @@
         <div class="p-4 border rounded-2xl">
           <div class="flex flex-wrap items-center gap-3">
             <input id="date" type="date" class="border rounded-xl px-3 py-2" />
-            <div id="courtPicker" class="flex flex-wrap items-center gap-2" role="list">
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition ring-2 ring-emerald-400" data-id="5A" role="listitem">Half Ground A (5A)</button>
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="5B" role="listitem">Half Ground B (5B)</button>
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="7A" role="listitem">Full Ground (7A)</button>
-              <button class="px-4 py-2 rounded-xl border hover:bg-gray-50 transition" data-id="CRK" role="listitem">Cricket (CRK)</button>
-            </div>
+            <!-- courtPicker removed — pitch selector is used instead -->
           </div>
 
           <!-- Pitch selector container: interactive pitch UI will be injected here by scripts/app.js -->
@@ -202,20 +197,10 @@
   <!-- Note: Booking & Wishlist handled by scripts/app.js -->
   <script type="module" src="./scripts/app.js"></script>
 
-  <!-- Small inline helpers: set date bounds, ensure 5B present, normalize contact links -->
+  <!-- Small inline helpers: set date bounds, normalize contact links -->
   <script>
     (function(){
-      // 1) Ensure 5B exists (idempotent)
-      const cp = document.getElementById('courtPicker');
-      if(cp && !cp.querySelector('button[data-id="5B"]')) {
-        const btn = document.createElement('button');
-        btn.className = 'px-4 py-2 rounded-xl border hover:bg-gray-50 transition';
-        btn.setAttribute('data-id','5B');
-        btn.textContent = 'Half Ground B (5B)';
-        cp.insertBefore(btn, cp.children[1] || null);
-      }
-
-      // 2) set date min/max and default (sync maxAdvanceDays with your config)
+      // 1) set date min/max and default (sync maxAdvanceDays with your config)
       const dateInput = document.getElementById('date');
       if(dateInput) {
         const today = new Date();
@@ -228,7 +213,7 @@
         dateInput.value = iso(today);
       }
 
-      // 3) normalize contact links from single source of truth
+      // 2) normalize contact links from single source of truth
       const phone = "+919876543210";
       const wa = document.getElementById("waLink");
       const callH = document.getElementById("callLinkHeader");
