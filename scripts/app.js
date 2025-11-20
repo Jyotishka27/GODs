@@ -1,5 +1,5 @@
-// scripts/app.js (tabbed dayparts + AM/PM labels)
-// Booking + Wishlist front-end using Firestore (no auth)
+// scripts/app.js (robust initialization: pitch selector + daypart tabs + AM/PM labels)
+// Drop-in replacement for existing scripts/app.js
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -21,11 +21,10 @@ const firebaseConfig = {
   messagingSenderId: "46992157689",
   appId: "1:46992157689:web:b547bc847c7a0331bb2b28"
 };
-
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
-/* ---------- Utility ---------- */
+/* ---------- small utils ---------- */
 const $ = (sel, el = document) => (el || document).querySelector(sel);
 const $$ = (sel, el = document) => Array.from((el || document).querySelectorAll(sel));
 const show = el => el?.classList.remove("hidden");
@@ -50,28 +49,26 @@ function toast(msg, opts = {}) {
     `;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), opts.duration || 6000);
-  } catch (e) { console.warn("toast failed", e); }
+  } catch (e) { /* ignore */ }
 }
 
-/* ---------- Date / Label helpers ---------- */
+/* ---------- date/label helpers ---------- */
 function fmtDateISO(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
-function to12HourLabel(slotId) {
-  // slotId like "06:00-07:00" -> "6:00 AM - 7:00 AM"
-  const [start, end] = slotId.split("-");
-  return `${to12(start)} - ${to12(end)}`;
-}
 function to12(t24) {
-  // "00:00" -> "12:00 AM", "12:00" -> "12:00 PM", "18:00" -> "6:00 PM"
   const [hh, mm] = t24.split(":").map(Number);
   const period = hh >= 12 ? "PM" : "AM";
   let hour = hh % 12;
   if (hour === 0) hour = 12;
   return `${hour}:${String(mm).padStart(2, "0")} ${period}`;
+}
+function to12HourLabel(slotId) {
+  const [start, end] = slotId.split("-");
+  return `${to12(start)} - ${to12(end)}`;
 }
 function niceWhen(dateStr, slotLabel) {
   const d = new Date(dateStr + "T00:00:00");
@@ -79,7 +76,7 @@ function niceWhen(dateStr, slotLabel) {
   return `${d.toLocaleDateString(undefined, opts)} · ${slotLabel}`;
 }
 
-/* ---------- Slots / meta ---------- */
+/* ---------- slots, pricing & court meta ---------- */
 const OPEN_HOUR = 0;
 const CLOSE_HOUR = 24;
 const BUFFER_MIN = 10;
@@ -113,7 +110,7 @@ function metaFor(courtId) {
   return COURT_META[key] || { type: "unknown", label: key || courtId, dims: "" };
 }
 
-/* ---------- occupancy ---------- */
+/* ---------- occupancy helpers ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   bookingDocs.forEach(b => {
@@ -179,17 +176,18 @@ const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
-/* ---------- state ---------- */
-let selectedCourt = normalizedKey('5A');   // default half-left
+/* ---------- app state ---------- */
+// default to half A (safe)
+let selectedCourt = normalizedKey('5A');
 let selectedSlot = null;
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 
-let selectedBucket = "morning"; // default tab shown (morning)
+let selectedBucket = "morning"; // default tab
 let modalMode = "booking";
 let preferredBookingId = null;
 
-/* ---------- populate static ---------- */
+/* ---------- seed UI & static ---------- */
 if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 
 (function populateStatic() {
@@ -249,12 +247,7 @@ async function fetchWishlistsFor(dateISO, courtId) {
 
 /* ---------- bucket util ---------- */
 function bucketSlots(slots) {
-  const buckets = {
-    midnight: [], // 0..5
-    morning: [],  // 6..11
-    afternoon: [],// 12..17
-    evening: []   // 18..23
-  };
+  const buckets = { midnight: [], morning: [], afternoon: [], evening: [] };
   slots.forEach(s => {
     const h = s.startHour;
     if (h >= 0 && h < 6) buckets.midnight.push(s);
@@ -265,21 +258,25 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- render: tabs + active bucket ---------- */
+/* ---------- render slots (tabs) ---------- */
 async function renderSlots() {
   if (!slotPanel || !slotTabs) return;
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
 
+  // defensive: ensure we have a valid selectedCourt
+  if (!selectedCourt) {
+    selectedCourt = '5A';
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
+  }
+
   // fetch bookings/wishlist
   let bookingsAll = [], wishlists = [];
   try {
-    [bookingsAll, wishlists] = await Promise.all([
-      fetchBookingsForDate(selectedDate),
-      fetchWishlistsFor(selectedDate, selectedCourt)
-    ]);
+    [bookingsAll, wishlists] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate, selectedCourt)]);
   } catch (e) {
-    console.error("Error fetching bookings/wishlists:", e);
-    toast("Error fetching bookings/wishlists — check console", { error: true, duration: 8000 });
+    console.error("fetch error", e);
+    toast("Error fetching bookings/wishlists.", { error: true });
   }
 
   const occupancy = computeSlotOccupancy(bookingsAll);
@@ -292,19 +289,16 @@ async function renderSlots() {
 
   const buckets = bucketSlots(ALL_SLOTS);
 
-  // Prepare counts per bucket (for tab badges): available / total
+  // counts
   const bucketInfo = {};
   Object.entries(buckets).forEach(([key, items]) => {
     const total = items.length;
     let available = 0;
-    items.forEach(s => {
-      const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
-      if (avail.allowed) available++;
-    });
+    items.forEach(s => { if (isSlotAvailableFor(occupancy, s.id, selectedCourt).allowed) available++; });
     bucketInfo[key] = { total, available };
   });
 
-  // Render tabs
+  // render tabs
   slotTabs.innerHTML = "";
   const tabOrder = [
     { key: "midnight", title: "Midnight (12:00 AM–6:00 AM)" },
@@ -316,23 +310,19 @@ async function renderSlots() {
   tabsWrap.className = "flex gap-2 items-center flex-wrap";
 
   tabOrder.forEach(t => {
-    const btn = document.createElement("button");
     const isActive = (t.key === selectedBucket);
+    const btn = document.createElement("button");
     btn.className = `px-3 py-1 rounded-full border text-sm flex items-center gap-2 ${isActive ? 'bg-emerald-600 text-white' : 'bg-white'}`;
     btn.setAttribute("data-bucket", t.key);
     btn.innerHTML = `<span>${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
-    btn.addEventListener("click", () => {
-      selectedBucket = t.key;
-      renderSlots();
-    });
+    btn.addEventListener("click", () => { selectedBucket = t.key; renderSlots(); });
     tabsWrap.appendChild(btn);
   });
   slotTabs.appendChild(tabsWrap);
 
-  // Render panel for selected bucket only
+  // render only chosen bucket
   slotPanel.innerHTML = "";
   const selectedItems = buckets[selectedBucket] || [];
-
   const header = document.createElement("div");
   header.className = "mb-3 flex items-center justify-between";
   const headTitle = document.createElement("h4");
@@ -361,6 +351,7 @@ async function renderSlots() {
 
   const list = document.createElement("div");
   list.className = "space-y-2";
+
   selectedItems.forEach(s => {
     const item = document.createElement("div");
     item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
@@ -369,7 +360,6 @@ async function renderSlots() {
     left.innerHTML = `<div class="font-medium">${to12HourLabel(s.label)}</div><div class="text-xs text-gray-500">Buffer ${BUFFER_MIN} mins</div>`;
 
     const right = document.createElement("div");
-
     const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
 
     if (!avail.allowed) {
@@ -415,7 +405,7 @@ async function renderSlots() {
   slotPanel.appendChild(list);
 }
 
-/* ---------- modal helpers (unchanged) ---------- */
+/* ---------- modal & validation (unchanged) ---------- */
 function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
@@ -440,7 +430,6 @@ function validateModalFields() {
   return { ok: true, name, phone };
 }
 
-/* ---------- booking + wishlist flows (unchanged) ---------- */
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -598,20 +587,20 @@ mConfirm?.addEventListener("click", async () => {
   }
 });
 
-/* ---------- hide confirm card when date changes ---------- */
+/* ---------- hide confirm card on date change ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- pitch selector (unchanged) ---------- */
-/* Reuse the pitch selector you already have — implemented previously.
-   This function injects the SVG + quick buttons and updates the small status panel.
-   Keep it the same as the version you already dropped into the file earlier.
-   Below is the same implementation used before (keeps selection behavior).
+/* ---------- PITCH SELECTOR: returns a setter so we can safely set selection before rendering ---------- */
+/*
+  Implementation injects the SVG + quick buttons into #pitchSelectorContainer.
+  It returns an object with a `setSelected(pitchKey)` function to allow the outer app
+  to set selection immediately and ensure renderSlots uses the value.
 */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
-    console.debug("PitchSelector container not found");
-    return;
+    console.debug("Pitch selector container not found");
+    return { setSelected: (k)=>{} };
   }
 
   const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
@@ -627,6 +616,7 @@ function initPitchSelector() {
           <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
         </div>
       </div>
+
       <div class="relative flex flex-col md:flex-row gap-4">
         <div class="flex-1 flex justify-center">
           <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
@@ -659,6 +649,7 @@ function initPitchSelector() {
     </div>
   `;
 
+  // mapping
   const pitchToCourt = {
     "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
     "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
@@ -668,8 +659,10 @@ function initPitchSelector() {
 
   const highlight = container.querySelector("#selectionHighlight");
   function clearHighlights() { while (highlight.firstChild) highlight.removeChild(highlight.firstChild); $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600")); }
+
   function showHighlight(type) {
     clearHighlights();
+    if (!type) return;
     if (type === "half-left") {
       const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
       r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
@@ -716,14 +709,15 @@ function initPitchSelector() {
   function setSelectedByPitch(pitchKey) {
     if (!pitchToCourt[pitchKey]) return;
     showHighlight(pitchKey);
-
     const target = pitchToCourt[pitchKey];
     selectedCourt = normalizedKey(target.id);
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     updateSelectedPanel(selectedCourt);
-    try { renderSlots(); } catch (e) { console.warn("renderSlots not available yet", e); }
+    // re-render slots when selection changes
+    try { renderSlots(); } catch(e) { console.warn("renderSlots not ready", e); }
   }
 
+  // wire DOM areas: clicks on the svg invisible areas
   const areaFull = container.querySelector("#area-full");
   const areaCricket = container.querySelector("#area-cricket");
   const areaLeft = container.querySelector("#area-left");
@@ -741,23 +735,39 @@ function initPitchSelector() {
     });
   });
 
-  // reflect existing selection visually & update small panel
-  const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v.id]=k, acc), {});
-  const mappedPitch = rev[normalizedKey(selectedCourt)];
-  if (mappedPitch) {
-    showHighlight(mappedPitch);
-    updateSelectedPanel(selectedCourt);
-  }
+  // expose a setter to outer scope so app can initialize selection synchronously
+  return {
+    setSelected: (pitchKey) => {
+      // if an invalid key, silently ignore
+      if (!pitchToCourt[pitchKey]) return;
+      setSelectedByPitch(pitchKey);
+    }
+  };
 }
 
-/* ---------- initial ---------- */
-window.addEventListener("load", () => {
+/* ---------- initialization ---------- */
+window.addEventListener("load", async () => {
+  // ensure date value
   selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
-  try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
+  // init pitch selector and get setter
+  let selectorApi = { setSelected: (k)=>{} };
+  try { selectorApi = initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
 
+  // set default selection (use selectorApi so highlights + updateSelectedUI run)
+  // prefer Half-left initially
+  try {
+    selectorApi.setSelected('half-left');
+  } catch (e) {
+    // fallback — set selectedCourt manually
+    selectedCourt = '5A';
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
+  }
+
+  // a small delay to allow DOM paint, then render slots
   setTimeout(() => {
-    renderSlots();
-  }, 80);
+    try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
+  }, 60);
 });
