@@ -29,7 +29,7 @@
     </div>
   </noscript>
 
-  <!-- Header -->
+  <!-- Header (unchanged) -->
   <header class="sticky top-0 z-30 bg-white/80 backdrop-blur border-b">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a class="flex items-center gap-2" href="#" aria-label="GODs Turf home">
@@ -48,7 +48,7 @@
     </div>
   </header>
 
-  <!-- Hero -->
+  <!-- Hero (unchanged) -->
   <section class="relative">
     <img src="./assets/hero-turf.svg" alt="turf" class="w-full h-[48vh] object-cover" loading="lazy">
     <div class="absolute inset-0 bg-black/30"></div>
@@ -68,7 +68,6 @@
         <div class="p-4 border rounded-2xl">
           <div class="flex flex-wrap items-center gap-3">
             <input id="date" type="date" class="border rounded-xl px-3 py-2" />
-            <!-- old courtPicker removed — pitch selector is used instead -->
           </div>
 
           <!-- Pitch selector container (injected by scripts/app.js) -->
@@ -90,9 +89,13 @@
 
         <div class="p-4 border rounded-2xl">
           <h3 class="font-semibold mb-3">Available slots</h3>
-          <div id="slotList" class="space-y-2" role="list" aria-live="polite">
-            <!-- slot items injected by scripts/app.js -->
-          </div>
+
+          <!-- NEW: Tabs for dayparts -->
+          <div id="slotTabs" class="mb-3"></div>
+
+          <!-- NEW: Panel where the picked slots render -->
+          <div id="slotPanel" role="list" aria-live="polite"></div>
+
         </div>
 
         <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
@@ -140,13 +143,12 @@
     <div>
       <h3 class="font-semibold mb-3">Gallery</h3>
       <div id="gallery" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <!-- include the uploaded preview image path so your build can transform it -->
         <img src="/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png" alt="preview" class="w-full h-40 object-cover rounded" />
       </div>
     </div>
   </section>
 
-  <!-- Rules & Policies -->
+  <!-- Rules & Policies (unchanged) -->
   <section id="rules" class="max-w-6xl mx-auto px-4 pb-16">
     <div class="grid md:grid-cols-2 gap-6">
       <div class="p-4 border rounded-2xl">
@@ -171,7 +173,7 @@
     </div>
   </footer>
 
-  <!-- Modal -->
+  <!-- Modal (unchanged) -->
   <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4"
        role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
     <div class="bg-white rounded-2xl max-w-md w-full p-4">
@@ -202,7 +204,7 @@
   <!-- app script -->
   <script type="module" src="./scripts/app.js"></script>
 
-  <!-- small inline helpers: set date bounds & normalize contact links -->
+  <!-- small inline helpers (unchanged) -->
   <script>
     (function(){
       const dateInput = document.getElementById('date');
