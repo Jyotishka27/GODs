@@ -680,6 +680,179 @@ courtPicker?.addEventListener("click", (ev) => {
   renderSlots();
 });
 
+/* ---------- Pitch selector integration (vanilla) ---------- */
+/*
+ - Renders an interactive SVG pitch into #pitchSelectorContainer
+ - Maps:
+    half-left -> 5A
+    half-right -> 5B
+    full -> 7A
+    full-cricket -> CRK
+ - Syncs selection to the courtPicker buttons and triggers renderSlots()
+ - Uses the uploaded preview path provided by you (will be transformed to public URL in your build)
+*/
+function initPitchSelector() {
+  const container = document.getElementById("pitchSelectorContainer");
+  if (!container) return;
+
+  // uploaded file path (will be converted by your build/deploy pipeline)
+  const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
+
+  container.innerHTML = `
+    <div class="rounded-2xl shadow-md p-3 bg-white">
+      <div class="flex justify-between items-center mb-3">
+        <h3 class="text-lg font-medium">Choose pitch</h3>
+        <div class="space-x-2">
+          <button data-pitch="half-left" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (left)</button>
+          <button data-pitch="half-right" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (right)</button>
+          <button data-pitch="full" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full</button>
+          <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
+        </div>
+      </div>
+
+      <div class="relative flex flex-col md:flex-row gap-4">
+        <div class="flex-1 flex justify-center">
+          <!-- SVG pitch (clickable regions) -->
+          <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
+            <defs>
+              <linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="#2f7a2f"/>
+                <stop offset="100%" stop-color="#2aa02a"/>
+              </linearGradient>
+            </defs>
+            <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
+
+            <!-- center -->
+            <line x1="600" y1="40" x2="600" y2="760" stroke="#fff" stroke-width="3"/>
+            <circle cx="600" cy="400" r="90" fill="none" stroke="#fff" stroke-width="3"/>
+
+            <!-- penalty boxes & goals -->
+            <rect x="40" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
+            <rect x="980" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
+            <rect x="10" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
+            <rect x="1160" y="330" width="30" height="140" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
+
+            <!-- interactive regions -->
+            <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
+            <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
+            <rect id="area-full" x="140" y="140" width="920" height="520" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
+            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
+
+            <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
+            <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
+
+            <!-- selection highlight (placeholder, updated by JS) -->
+            <g id="selectionHighlight"></g>
+          </svg>
+        </div>
+
+        <div class="w-56 flex-shrink-0">
+          <div class="rounded-md overflow-hidden border p-2 bg-white shadow-sm">
+            <div class="text-xs text-gray-500 mb-2">Current UI preview</div>
+            <img id="pitchPreviewImg" src="${previewUrl}" alt="current-ui" class="w-full h-40 object-cover rounded" />
+            <div class="mt-2 text-xs text-gray-600">This preview is the image you uploaded — useful while replacing the half-ground graphic.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // mapping pitch -> courtId
+  const pitchToCourt = {
+    "half-left": "5A",
+    "half-right": "5B",
+    "full": "7A",
+    "full-cricket": "CRK"
+  };
+
+  // helpers to update visuals and app state
+  const svg = container.querySelector("#pitchSvg");
+  const highlight = container.querySelector("#selectionHighlight");
+
+  function clearHighlights() {
+    // remove children
+    while (highlight.firstChild) highlight.removeChild(highlight.firstChild);
+    // un-style quick buttons
+    $$(".pitch-btn", container).forEach(b => b.classList.remove("bg-green-600","text-white","bg-yellow-600"));
+  }
+
+  function showHighlight(type) {
+    clearHighlights();
+
+    if (type === "half-left") {
+      // translucent rect left
+      const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      r.setAttribute("x","40"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
+      r.setAttribute("rx","20"); r.setAttribute("fill","#ffffff33"); r.setAttribute("stroke","#0f923f"); r.setAttribute("stroke-width","6");
+      highlight.appendChild(r);
+      container.querySelector('button[data-pitch="half-left"]').classList.add("bg-green-600","text-white");
+    } else if (type === "half-right") {
+      const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      r.setAttribute("x","600"); r.setAttribute("y","40"); r.setAttribute("width","560"); r.setAttribute("height","720");
+      r.setAttribute("rx","20"); r.setAttribute("fill","#ffffff33"); r.setAttribute("stroke","#0f923f"); r.setAttribute("stroke-width","6");
+      highlight.appendChild(r);
+      container.querySelector('button[data-pitch="half-right"]').classList.add("bg-green-600","text-white");
+    } else if (type === "full") {
+      const r = document.createElementNS("http://www.w3.org/2000/svg","rect");
+      r.setAttribute("x","140"); r.setAttribute("y","140"); r.setAttribute("width","920"); r.setAttribute("height","520");
+      r.setAttribute("rx","28"); r.setAttribute("fill","#ffffff55"); r.setAttribute("stroke","#0f923f"); r.setAttribute("stroke-width","8");
+      highlight.appendChild(r);
+      container.querySelector('button[data-pitch="full"]').classList.add("bg-green-600","text-white");
+    } else if (type === "full-cricket") {
+      const e = document.createElementNS("http://www.w3.org/2000/svg","ellipse");
+      e.setAttribute("cx","600"); e.setAttribute("cy","400"); e.setAttribute("rx","540"); e.setAttribute("ry","330");
+      e.setAttribute("fill","#fff1c433"); e.setAttribute("stroke","#d97706"); e.setAttribute("stroke-width","8");
+      highlight.appendChild(e);
+      container.querySelector('button[data-pitch="full-cricket"]').classList.add("bg-yellow-600","text-white");
+    }
+  }
+
+  function setSelectedByPitch(pitchKey) {
+    if (!pitchToCourt[pitchKey]) return;
+    // 1) visual
+    showHighlight(pitchKey);
+
+    // 2) update selectedCourt & UI button states
+    const mapped = pitchToCourt[pitchKey];
+    // sync the courtPicker buttons
+    $$(".selected-court", courtPicker).forEach(b => b.classList.remove("selected-court", "ring-2", "ring-emerald-400"));
+    const targetBtn = courtPicker.querySelector(`button[data-id="${mapped}"]`);
+    if (targetBtn) {
+      targetBtn.classList.add("selected-court", "ring-2", "ring-emerald-400");
+    }
+    selectedCourt = normalizedKey(mapped);
+    // re-render slots
+    try { renderSlots(); } catch (e) { console.warn("renderSlots not available yet", e); }
+  }
+
+  // wire click events for svg areas
+  const areaLeft = container.querySelector("#area-left");
+  const areaRight = container.querySelector("#area-right");
+  const areaFull = container.querySelector("#area-full");
+  const areaCricket = container.querySelector("#area-cricket");
+
+  areaLeft?.addEventListener("click", ()=> setSelectedByPitch("half-left"));
+  areaRight?.addEventListener("click", ()=> setSelectedByPitch("half-right"));
+  areaFull?.addEventListener("click", ()=> setSelectedByPitch("full"));
+  areaCricket?.addEventListener("click", ()=> setSelectedByPitch("full-cricket"));
+
+  // wire quick buttons
+  $$(".pitch-btn", container).forEach(b => {
+    b.addEventListener("click", (ev) => {
+      const p = ev.currentTarget.getAttribute("data-pitch");
+      setSelectedByPitch(p);
+    });
+  });
+
+  // if page has an initial selectedCourt, reflect in pitch selector
+  if (selectedCourt) {
+    // reverse mapping: court->pitch
+    const rev = Object.entries(pitchToCourt).reduce((acc,[k,v]) => (acc[v]=k, acc), {});
+    const mappedPitch = rev[normalizedKey(selectedCourt)];
+    if (mappedPitch) showHighlight(mappedPitch);
+  }
+}
+
 /* ---------- initial setup ---------- */
 window.addEventListener("load", () => {
   if (!selectedCourt) {
@@ -689,5 +862,9 @@ window.addEventListener("load", () => {
       selectedCourt = normalizedKey(first.getAttribute("data-id"));
     }
   }
+
+  // initialize pitch selector (safe to call even if container not present)
+  try { initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
+
   renderSlots();
 });
