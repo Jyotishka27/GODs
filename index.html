@@ -18,36 +18,38 @@
 
     /* timeline / ticks: improved to prevent overflow and keep text inside boxes */
     .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:.5rem}
-    /* stable grid columns but allow compact ticks */
+
+    /* Bigger, more comfortable timeline ticks: wider columns and taller boxes */
     .timeline-grid{
       display:inline-grid;
       grid-auto-flow:column;
-      grid-auto-columns:minmax(56px, min-content);
-      gap:6px;
+      /* wider default tick so text doesn't overflow; adjust as needed */
+      grid-auto-columns:minmax(78px, min-content);
+      gap:10px;
       align-items:center;
     }
 
     /* slot tick */
     .slot-btn{
       box-sizing: border-box;
-      min-width:56px;
-      padding:.45rem .6rem;
+      min-width:78px;
+      padding:8px 12px;
       display:inline-flex;
       flex-direction:column;
       align-items:center;
       justify-content:center;
-      border-radius:.375rem;
+      border-radius:12px;
       border:1px solid #e5e7eb;
-      font-size:12px;
+      font-size:14px;
       background:#fff;
 
       /* KEEP CONTENT INSIDE THE BOX */
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
-      height: 48px;          /* consistent height */
-      max-width: 96px;      /* prevents tick growing too wide; tweak if you want wider ticks */
-      line-height: 1;
+      height: 64px;          /* increased height */
+      max-width: 130px;      /* prevents tick growing too wide; tweak if you want wider ticks */
+      line-height: 1.1;
     }
 
     /* internal label styling — ensure each line is clipped not overflowing */
@@ -61,8 +63,8 @@
       padding:0;
       margin:0;
     }
-    .slot-btn > div:first-child { font-size:11px; font-weight:600; }
-    .slot-btn > div:last-child  { font-size:10px; opacity:.75; margin-top:2px; }
+    .slot-btn > div:first-child { font-size:13px; font-weight:600; }
+    .slot-btn > div:last-child  { font-size:11px; opacity:.8; margin-top:4px; }
 
     .slot-past{background:#f8fafc;color:#9ca3af;border-color:#f1f5f9}
     .slot-blocked{background:#fff1f2;color:#991b1b;border-color:#fee2e2}
@@ -74,7 +76,7 @@
     @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} #pitchSelectorContainer .w-56{width:100%} }
     @media(max-width:480px){ #modal > div{height:100vh;border-radius:0;padding:16px} }
     .touch-cta{padding:12px 16px;border-radius:12px}
-    @media(max-width:880px){ .md\\:col-span-2{grid-column:1 / -1} }
+    @media(max-width:880px){ .md\:col-span-2{grid-column:1 / -1} }
     a.wa-btn{display:inline-block;padding:10px 12px;border-radius:10px;background:var(--accent);color:#fff;text-decoration:none}
 
     /* ---------------- Mobile-specific improvements ---------------- */
@@ -103,17 +105,17 @@
 
       /* timeline: slightly larger gaps and ticks on tiny phones; keep text clipped */
       .timeline-container { padding: 8px 6px !important; }
-      .timeline-grid { gap:8px; }
+      .timeline-grid { gap:12px; grid-auto-columns:minmax(88px, min-content); }
       .slot-btn {
-        min-width: 72px !important;
-        max-width: 110px !important;
-        height: 52px !important;
-        padding: 6px 10px !important;
-        border-radius: 10px !important;
-        font-size: 13px !important;
+        min-width: 88px !important;
+        max-width: 150px !important;
+        height: 72px !important;
+        padding: 10px 12px !important;
+        border-radius: 14px !important;
+        font-size: 15px !important;
       }
-      .slot-btn > div:first-child { font-size:12px; }
-      .slot-btn > div:last-child  { font-size:10px; }
+      .slot-btn > div:first-child { font-size:14px; }
+      .slot-btn > div:last-child  { font-size:12px; }
 
       .mobile-booking-cta {
         display: block !important;
@@ -136,7 +138,7 @@
 
     /* Slightly smaller ticks on small tablets */
     @media (min-width: 421px) and (max-width: 768px) {
-      .slot-btn { min-width: 56px; height: 40px; }
+      .slot-btn { min-width: 72px; height: 56px; }
       .hero-height { height: 30vh; }
     }
   </style>
