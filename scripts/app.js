@@ -685,7 +685,6 @@ async function renderSlots() {
     console.debug('renderSlots END');
   } catch (err) {
     console.error('renderSlots threw:', err);
-    // surface to UI so you can see in mobile screenshot
     if (slotPanel) slotPanel.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fee2e2;color:#991b1b">renderSlots error: ${String(err).slice(0,200)}</div>`;
   }
 }
@@ -704,7 +703,6 @@ function centerTimelineNode(node) {
   try {
     const container = node && node.closest('.timeline-container');
     if (!container) return;
-    // the actual scrollable element in your markup is the timeline-container (overflow-x:auto)
     const rect = container.getBoundingClientRect();
     const nodeRect = node.getBoundingClientRect();
     const nodeCenter = (nodeRect.left + nodeRect.right) / 2;
