@@ -55,15 +55,30 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
-/* tiny helper: attach tap-friendly handlers (click + touchstart) */
+/* tiny helper: attach tap-friendly handlers (pointer-aware, dedup) */
 function addTap(el, handler) {
   if (!el) return;
-  el.addEventListener('click', handler);
-  el.addEventListener('touchstart', function touchHandler(e){
-    // prevent double-firing / ghost clicks on some devices
-    e.preventDefault();
+  let fired = false;
+  const reset = () => { setTimeout(() => { fired = false; }, 350); };
+
+  // Prefer pointerdown when available (covers mouse/touch/stylus)
+  const downEvent = window.PointerEvent ? 'pointerdown' : 'touchstart';
+
+  const pointerHandler = function (e) {
+    if (fired) return;
+    fired = true;
+    try { if (e.cancelable) e.preventDefault(); } catch (err) {}
     handler(e);
-  }, { passive: false });
+    reset();
+  };
+
+  const clickHandler = function (e) {
+    if (fired) { try { e.preventDefault(); } catch(e){}; return; }
+    handler(e);
+  };
+
+  el.addEventListener(downEvent, pointerHandler, { passive: false });
+  el.addEventListener('click', clickHandler);
 }
 
 /* ---------- date/label helpers ---------- */
@@ -450,6 +465,7 @@ async function renderSlots() {
       wishBtn.className = "px-3 py-2 text-sm rounded-xl border hover:bg-gray-50 w-full sm:w-auto text-center";
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
+      wishBtn.setAttribute('aria-label', `Add to wishlist for ${to12HourLabel(s.label)} on ${selectedDate}`);
       addTap(wishBtn, () => {
         const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
         preferredBookingId = occBooking?._id ?? null;
@@ -459,9 +475,11 @@ async function renderSlots() {
 
     } else {
       // available: right contains Book button and wishlist badge (if any)
+      const meta = metaFor(selectedCourt);
       const bookBtn = document.createElement("button");
       bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 w-full sm:w-auto";
       bookBtn.textContent = "Book";
+      bookBtn.setAttribute('aria-label', `Book slot ${to12HourLabel(s.label)} on ${selectedDate} for ${meta.label}`);
       addTap(bookBtn, () => openBookingModal(s));
       right.appendChild(bookBtn);
 
@@ -477,6 +495,7 @@ async function renderSlots() {
         wishBtn.className = "px-3 py-2 text-sm rounded-xl border hover:bg-gray-50 w-full sm:w-auto";
         wishBtn.textContent = "Wishlist";
         wishBtn.title = "Add yourself to wishlist for this slot";
+        wishBtn.setAttribute('aria-label', `Add to wishlist for ${to12HourLabel(s.label)} on ${selectedDate}`);
         addTap(wishBtn, () => {
           preferredBookingId = null;
           openWishlistModal(s, null);
@@ -522,6 +541,18 @@ function validateModalFields() {
 function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
 function unlockBodyScroll() { document.body.style.overflow = ''; }
 
+function openModal() { modal?.classList.remove("hidden"); lockBodyScroll(); setTimeout(()=> { mName?.focus(); }, 120); }
+function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); unlockBodyScroll(); }
+function resetModalFields() {
+  if (mName) mName.value = "";
+  if (mPhone) mPhone.value = "";
+  if (mCoupon) mCoupon.value = "";
+  if (mNotes) mNotes.value = "";
+  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
+  clearFieldErrors();
+  setConfirmLoading(false);
+}
+
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -547,17 +578,7 @@ function openWishlistModal(slot, prefBookingId = null) {
   openModal();
   setTimeout(()=> { mName?.focus(); }, 120);
 }
-function openModal() { modal?.classList.remove("hidden"); lockBodyScroll(); }
-function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); unlockBodyScroll(); }
-function resetModalFields() {
-  if (mName) mName.value = "";
-  if (mPhone) mPhone.value = "";
-  if (mCoupon) mCoupon.value = "";
-  if (mNotes) mNotes.value = "";
-  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
-  clearFieldErrors();
-  setConfirmLoading(false);
-}
+
 closeModal?.addEventListener("click", closeModalFn);
 mCancel?.addEventListener("click", closeModalFn);
 
@@ -678,8 +699,13 @@ mConfirm?.addEventListener("click", async () => {
   }
 });
 
-/* ---------- hide confirm card on date change ---------- */
-dateInput?.addEventListener("change", ()=> hide(confirmCard));
+/* ---------- hide confirm card on date change and re-render slots ---------- */
+dateInput?.addEventListener("change", () => {
+  selectedDate = dateInput.value || fmtDateISO(new Date());
+  hide(confirmCard);
+  selectedBucket = 'morning';
+  renderSlots();
+});
 
 /* ---------- PITCH SELECTOR ---------- */
 function initPitchSelector() {
@@ -842,6 +868,11 @@ window.addEventListener("load", async () => {
     selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
   }
+
+  // Close modal when clicking on backdrop (outside content)
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModalFn();
+  });
 
   setTimeout(() => {
     try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
