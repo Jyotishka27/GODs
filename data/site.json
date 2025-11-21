@@ -1,8 +1,8 @@
 {
   "name": "GODs Turf",
-  "phone": "+919876543210",
-  "whatsapp": "919876543210",
-  "email": "hello@gods.example",
+  "phone": "+917003396909",
+  "whatsapp": "917003396909",
+  "email": "godsturf@gmail.com",
   "address": "GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150",
   "coords": {
     "lat": 22.511296661107526,
@@ -61,8 +61,7 @@
   },
   "resourceCapacityNote": "resourceCapacity = number of concurrent bookings the physical resource can host (e.g., main-pitch can host 2 halves simultaneously). If you intended this to be total units across courts, set to 6.",
   "hours": {
-    "open": 6,
-    "close": 23
+    "open": 24 * 7
   },
   "slotIntervalMins": 60,
   "defaultDurationMins": 60,
