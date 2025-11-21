@@ -100,7 +100,7 @@ const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {
 
 const BUFFER_MIN = 10;
 const MIN_BOOKING_MINS = 60; // min 60 minutes
-const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
+const PRICE_BY_COURT = { "5A": 750 * 1, "5B": 750 * 1, "7A": 1250 * 1, "CRK": 1250 * 1 }; // use base rates; you can change table later
 
 const COURT_META = {
   "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
@@ -137,6 +137,7 @@ function metaFor(courtId) {
 
 /* ---------- expand bookings to 30-min slots ---------- */
 function expandBookingToSlots(bookingRangeId) {
+  if (!bookingRangeId || typeof bookingRangeId !== "string") return [];
   const [start, end] = bookingRangeId.split("-");
   // find index by start
   const startIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[0] === start);
@@ -178,9 +179,14 @@ function computeSlotOccupancy(bookingDocs) {
       const copy = { ...b, court: courtId };
       s.bookings.push(copy);
       if ((b.status || "").toLowerCase() === "cancelled") return;
-      if (meta.type === "half") s.halves.add(courtId);
-      else if (meta.type === "full") s.full = true;
-      else if (meta.type === "cricket") s.cricket = true;
+      // ---- FIX: only add halves if we have a normalized courtId ----
+      if (meta.type === "half") {
+        if (courtId) s.halves.add(courtId);
+      } else if (meta.type === "full") {
+        s.full = true;
+      } else if (meta.type === "cricket") {
+        s.cricket = true;
+      }
     });
   });
   return m;
@@ -196,18 +202,23 @@ function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   return `${start}-${end}`;
 }
 function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCourt) {
+  if (!startSlotId || !targetCourt) return { allowed: false, reason: "Invalid args" };
   const rangeId = makeRangeIdFromStartAndDuration(startSlotId, durationMins);
   const slotsNeeded = expandBookingToSlots(rangeId);
   if (!slotsNeeded.length) return { allowed: false, reason: "Invalid range." };
   const tmeta = metaFor(targetCourt);
+  const targetKey = normalizedKey(targetCourt);
 
   for (let sid of slotsNeeded) {
     const occ = occupancyMap[sid] || { halves: new Set(), full:false, cricket:false, bookings:[] };
     if (tmeta.type === "half") {
       if (occ.full) return { allowed: false, reason: `Blocked — full ground at ${sid}` };
       if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
+      // if both halves taken -> blocked
       if (occ.halves.size >= 2) return { allowed: false, reason: `Both halves booked at ${sid}` };
-      if (occ.halves.has(normalizedKey(targetCourt))) return { allowed: false, reason: `You already booked this half at ${sid}` };
+      // if this same half already booked by someone else -> blocked
+      if (targetKey && occ.halves.has(targetKey)) return { allowed: false, reason: `You already booked this half at ${sid}` };
+      // otherwise the other half being present should not block booking this half
     } else if (tmeta.type === "full") {
       if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — half booked at ${sid}` };
       if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
@@ -339,128 +350,11 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- UI: timeline renderer ---------- */
+/* ---------- UI: timeline renderer (simplified container) ---------- */
 function createTimelineElement() {
   const container = document.createElement("div");
   container.className = "w-full overflow-x-auto py-2";
-  // timeline inner grid
-  const grid = document.createElement("div");
-  grid.className = "inline-grid gap-1";
-  // 48 columns, each tick min-width on mobile
-  grid.style.gridAutoFlow = "column";
-  grid.style.gridAutoColumns = "min-content";
-  grid.style.alignItems = "center";
-  container.appendChild(grid);
-  return { container, grid };
-}
-
-function renderTimeline(gridEl, occupancyMap, dateISO) {
-  gridEl.innerHTML = ""; // reset
-
-  ALL_SLOTS.forEach(slot => {
-    const btn = document.createElement("button");
-    btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
-    btn.setAttribute("data-slot-id", slot.id);
-    btn.setAttribute("aria-pressed", "false");
-    btn.style.minWidth = "64px"; // small pill shape; adjust if you want narrower
-    btn.style.display = "inline-flex";
-    btn.style.flexDirection = "column";
-    btn.style.alignItems = "center";
-    btn.style.justifyContent = "center";
-    btn.style.gap = "4px";
-
-    const past = isSlotInPast(slot.id, dateISO);
-    const occ = occupancyMap[slot.id] || { halves: new Set(), full:false, cricket:false, bookings:[] };
-
-    // determine state (CONSISTENT: only full/cricket block everything; halves => partial)
-    let state = "available";
-    if (past) {
-      state = "past";
-    } else {
-      if (occ.full || occ.cricket) {
-        state = "blocked";
-      } else if (occ.halves && occ.halves.size >= 1) {
-        state = "partial"; // visually indicate one (or more) halves taken but still selectable when appropriate
-      } else {
-        state = "available";
-      }
-    }
-
-    // visual classes
-    if (state === "past") {
-      btn.classList.add("bg-gray-50","text-gray-400","border-gray-100");
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled","true");
-    } else if (state === "blocked") {
-      btn.classList.add("bg-red-50","text-red-700","border-red-100");
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled","true");
-    } else if (state === "partial") {
-      // partial (some halves booked) => still possibly bookable depending on selected court
-      btn.classList.add("bg-yellow-50","text-yellow-800","border-yellow-100");
-      btn.disabled = false;
-      btn.setAttribute("aria-disabled","false");
-    } else {
-      btn.classList.add("bg-white","text-gray-800");
-      btn.disabled = false;
-      btn.setAttribute("aria-disabled","false");
-    }
-
-    // label & meta
-    const timeLabel = document.createElement("div");
-    timeLabel.textContent = to12FromHHMM(slot.start);
-    timeLabel.style.fontSize = "11px";
-    timeLabel.style.opacity = "0.95";
-
-    const sub = document.createElement("div");
-    sub.textContent = slot.label.split("-")[0]; // raw hh:mm
-    sub.style.fontSize = "10px";
-    sub.style.opacity = "0.6";
-
-    btn.appendChild(timeLabel);
-    btn.appendChild(sub);
-
-    // click handler toggles selection if available or partial
-    addTap(btn, (e) => {
-      e.preventDefault();
-      if (btn.disabled) {
-        // open wishlist if blocked/past? For past do nothing.
-        if (state === "blocked") {
-          // open wishlist modal for the single slot (only if user wants)
-          openWishlistModal(slot, null);
-        }
-        return;
-      }
-      // toggle selection in timelineSelection (we will auto-expand to contiguous range)
-      const slotId = slot.id;
-      if (timelineSelection.has(slotId)) {
-        timelineSelection.delete(slotId);
-      } else {
-        timelineSelection.add(slotId);
-      }
-
-      // important: after toggling, normalize selection to contiguous range between min and max
-      normalizeSelectionToContiguous();
-      // re-render highlights & summary
-      applySelectionHighlights(gridEl);
-      renderSelectionSummary(gridEl);
-    });
-
-    gridEl.appendChild(btn);
-  });
-
-  // initial selection UI
-  applySelectionHighlights(gridEl);
-}
-
-/* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
-function normalizeSelectionToContiguous() {
-  if (!timelineSelection.size) return;
-  const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
-  const min = indices[0], max = indices[indices.length - 1];
-  // replace selection with all slots in min..max
-  timelineSelection = new Set();
-  for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
+  return { container };
 }
 
 /* apply visual highlight to selected slots in the grid */
@@ -487,7 +381,7 @@ function applySelectionHighlights(gridEl) {
 
 /* show selection summary below timeline and show Book / Waitlist / Clear actions */
 function renderSelectionSummary(gridEl) {
-  // make or reuse a summary area below gridEl.parentElement
+  // make or reuse a summary area below gridEl (the gridEl is our bucketGrid)
   let summary = gridEl.parentElement.querySelector(".timeline-summary");
   if (!summary) {
     summary = document.createElement("div");
@@ -513,8 +407,7 @@ function renderSelectionSummary(gridEl) {
   const startTime = startSlot.id.split("-")[0];
   const endTime = endSlot.id.split("-")[1];
   const durationMins = (max - min + 1) * 30;
-  const price = selectedAmount; // price currently per booking slot in your model; adjust if needed per minute
-  // Option: prorate price by duration if required. For now we keep base price as per court (you can modify to per-hour pro-rate)
+  const price = selectedAmount; // price per hour base
   const priceMetric = Math.round((price * (durationMins/60)) || price);
 
   const info = document.createElement("div");
@@ -526,8 +419,7 @@ function renderSelectionSummary(gridEl) {
   const actions = document.createElement("div");
   actions.className = "flex items-center gap-2";
 
-  // determine if selection is fully available
-  // selection availability computed with isRangeAvailableFor
+  // selection availability
   const availability = isRangeAvailableFor(window.__GODsTurf?.occupancyMap || {}, startSlot.id, durationMins, selectedCourt);
   const anyPast = isSlotInPast(startSlot.id, selectedDate);
 
@@ -544,7 +436,6 @@ function renderSelectionSummary(gridEl) {
     bookBtn.textContent = "Join Waitlist";
     bookBtn.classList.add("bg-yellow-600");
     addTap(bookBtn, () => {
-      // open wishlist modal for this range (we will set selectedSlot to startSlot)
       openWishlistModal(startSlot, null, { startSlotId: startSlot.id, durationMins, rangeId: makeRangeIdFromStartAndDuration(startSlot.id, durationMins) });
     });
   } else {
@@ -557,7 +448,6 @@ function renderSelectionSummary(gridEl) {
       bookBtn.textContent = "Book";
       bookBtn.classList.add("bg-emerald-600");
       addTap(bookBtn, () => {
-        // open booking modal, with selectedSlot set to startSlot and mDuration set to durationMins
         openBookingModalWithRange(startSlot, durationMins);
       });
     }
@@ -605,7 +495,6 @@ async function renderSlots() {
   // wishlist map (by 30-min slot id)
   const wishlistMap = (wishlists || []).reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
-    // expand wishlist slotId into its constituent 30-min slots if needed (wishlist might be a single 30-min)
     const covered = expandBookingToSlots(w.slotId);
     covered.forEach(sid => {
       if (!acc[sid]) acc[sid] = [];
@@ -621,7 +510,6 @@ async function renderSlots() {
     const total = items.length;
     let available = 0;
     items.forEach(s => {
-      // check if starting here we can get min booking
       const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
       if (ok && !isSlotInPast(s.id, selectedDate)) available++;
     });
@@ -645,7 +533,7 @@ async function renderSlots() {
     btn.style.flex = "1 1 0";
     btn.style.minWidth = "120px";
     btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
-    addTap(btn, ()=> { selectedBucket = t.key; renderSlots(); });
+    addTap(btn, ()=> { selectedBucket = t.key; timelineSelection = new Set(); renderSlots(); });
     tabsWrap.appendChild(btn);
   });
   slotTabs.appendChild(tabsWrap);
@@ -674,20 +562,16 @@ async function renderSlots() {
     return;
   }
 
-  // timeline container
-  const { container, grid } = createTimelineElement();
-  // limit grid to only show ticks for this bucket in order
-  // create a temporary grid that contains only the bucket items
+  // timeline container (simpler & robust)
+  const { container } = createTimelineElement();
   const bucketGrid = document.createElement("div");
   bucketGrid.className = "inline-grid gap-1";
   bucketGrid.style.gridAutoFlow = "column";
   bucketGrid.style.gridAutoColumns = "min-content";
   bucketGrid.style.alignItems = "center";
   bucketGrid.style.width = "100%";
-  // copy relevant slots into a lightweight structure and render using renderTimeline-like method
-  // We'll reuse renderTimeline but provide a temporary occupancy map for those slots (occupancy is global though)
-  grid.appendChild(bucketGrid);
-  // render buttons into bucketGrid instead of global grid element
+
+  // render buttons into bucketGrid
   bucketItems.forEach(slot => {
     const btn = document.createElement("button");
     btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
@@ -702,7 +586,7 @@ async function renderSlots() {
     const past = isSlotInPast(slot.id, selectedDate);
     const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
-    // CONSISTENT state logic here as well
+    // CONSISTENT state logic
     let state = "available";
     if (past) {
       state = "past";
@@ -749,7 +633,6 @@ async function renderSlots() {
       e.preventDefault();
       if (btn.disabled) {
         if (state === "blocked") {
-          // open wishlist modal for this 30-min slot
           openWishlistModal(slot, null);
         }
         return;
@@ -759,7 +642,6 @@ async function renderSlots() {
       else timelineSelection.add(sid);
       normalizeSelectionToContiguous();
       // refresh visuals & summary
-      // update all bucket buttons
       const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
       allButtons.forEach(b => {
         const id = b.getAttribute("data-slot-id");
@@ -783,17 +665,25 @@ async function renderSlots() {
     bucketGrid.appendChild(btn);
   });
 
-  container.querySelector("div")?.remove?.(); // no-op safe
+  container.appendChild(bucketGrid);
   slotPanel.appendChild(container);
-  container.firstChild.replaceWith(bucketGrid); // place bucketGrid in container
 
   // initial empty summary
   renderSelectionSummary(bucketGrid);
 }
 
+/* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
+function normalizeSelectionToContiguous() {
+  if (!timelineSelection.size) return;
+  const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
+  const min = indices[0], max = indices[indices.length - 1];
+  // replace selection with all slots in min..max
+  timelineSelection = new Set();
+  for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
+}
+
 /* ---------- modal helpers & booking flow ---------- */
 function openBookingModalWithRange(startSlot, durationMins) {
-  // Set modal fields, including setting a hidden m-duration if present
   modalMode = "booking";
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
   if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${to12FromHHMM(startSlot.start)}`;
@@ -802,17 +692,14 @@ function openBookingModalWithRange(startSlot, durationMins) {
   if (mConfirm) mConfirm.textContent = "Confirm";
   preferredBookingId = null;
   resetModalFields();
-  // set duration hidden input (if present)
   const mD = $("#m-duration");
   if (mD) mD.value = String(durationMins);
-  // store selection in global for confirm handler
   modal.dataset.startSlot = startSlot.id;
   modal.dataset.durationMins = String(durationMins);
   openModal();
 }
 
 function openBookingModal(slot) {
-  // legacy - open booking for one 30-min tick (used elsewhere)
   openBookingModalWithRange(slot, MIN_BOOKING_MINS);
 }
 
@@ -825,7 +712,6 @@ function openWishlistModal(slot, prefBookingId = null, extra = null) {
   if (mConfirm) mConfirm.textContent = "Save to Wishlist";
   preferredBookingId = prefBookingId || null;
   resetModalFields();
-  // store preferred range if present
   if (extra && extra.startSlotId) {
     modal.dataset.startSlot = extra.startSlotId;
     modal.dataset.durationMins = String(extra.durationMins || 30);
@@ -846,7 +732,6 @@ function resetModalFields() {
   if (mPhone) mPhone.value = "";
   if (mCoupon) mCoupon.value = "";
   if (mNotes) mNotes.value = "";
-  // clean dataset
   if (modal) {
     delete modal.dataset.startSlot;
     delete modal.dataset.durationMins;
@@ -872,7 +757,6 @@ function validateModalFields() {
   const phone = mPhone?.value?.trim() || "";
   if (name.length < 2) return { ok:false, reason:"name" };
   if (!/^\+?\d{8,15}$/.test(phone)) return { ok:false, reason:"phone" };
-  // duration only read from modal dataset (we validate below before booking)
   return { ok:true, name, phone };
 }
 
@@ -892,7 +776,6 @@ mConfirm?.addEventListener("click", async () => {
 
   if (!selectedCourt || !selectedDate) { return alert("Select a pitch and date first."); }
 
-  // determine startSlot & duration from modal.dataset
   const startSlotId = modal?.dataset?.startSlot;
   const durationMins = Number(modal?.dataset?.durationMins || MIN_BOOKING_MINS);
   const rangeId = modal?.dataset?.rangeId || makeRangeIdFromStartAndDuration(startSlotId, durationMins);
@@ -931,7 +814,7 @@ mConfirm?.addEventListener("click", async () => {
       slotId: rangeId,
       slotLabel: to12HourLabel(rangeId),
       date: selectedDate,
-      amount: amountToSave, // saved prorated amount
+      amount: amountToSave,
       durationMins,
       status: "pending",
       createdAt: serverTimestamp()
@@ -943,14 +826,13 @@ mConfirm?.addEventListener("click", async () => {
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
       if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
-      if (camount) camount.textContent = `₹${booking.amount}`; // show prorated amount
+      if (camount) camount.textContent = `₹${booking.amount}`;
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
 
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
-      // clear timeline selection
       timelineSelection = new Set();
       renderSlots();
     } catch (err) {
@@ -964,10 +846,8 @@ mConfirm?.addEventListener("click", async () => {
   }
 
   if (modalMode === "wishlist") {
-    // save wishlist entry (rangeId or single slot)
     try {
       setConfirmLoading(true);
-      // dedupe check
       const dupQ = query(collection(db, "wishlists"),
         where("date","==", selectedDate),
         where("court","==", normalizedKey(selectedCourt)),
@@ -984,7 +864,6 @@ mConfirm?.addEventListener("click", async () => {
         return;
       }
 
-      // For wishlist we also save a prorated amount for clarity (same logic)
       const wishlistAmount = Math.round((selectedAmount || 0) * (durationMins / 60));
 
       const wishlistEntry = {
