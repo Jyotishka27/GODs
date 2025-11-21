@@ -1,8 +1,7 @@
-// scripts/app.js (mobile-friendly drop-in replacement)
+// scripts/app.js (updated — 30min base slots, min 60min booking, 30min increments)
 // Booking + Wishlist front-end using Firestore (no auth)
 // - Slot buckets, pitch selector, pending/confirmed status display
-// - Book button on right, status pill centered, wishlist on right
-// - Robust normalization of court keys to avoid halves blocking each other
+// - Booking duration selectable (minimum 60 mins, increments of 30 mins)
 
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -15,7 +14,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
 
-/* ---------- Firebase config ---------- */
+/* ---------- Firebase config (unchanged) ---------- */
 const firebaseConfig = {
   apiKey: "AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s",
   authDomain: "gods-turf.firebaseapp.com",
@@ -55,11 +54,9 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
-/* tiny helper: attach tap-friendly handlers (click + touchstart) */
 function addTap(el, handler) {
   if (!el) return;
   el.addEventListener('click', handler);
-  // Add touchstart but avoid ghost clicks; preventDefault to avoid double-fire
   el.addEventListener('touchstart', function touchHandler(e){
     e.preventDefault();
     handler(e);
@@ -73,16 +70,16 @@ function fmtDateISO(d) {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
-function to12(t24) {
-  const [hh, mm] = t24.split(":").map(Number);
+function to12FromHHMM(hhmm) {
+  const [hh, mm] = hhmm.split(":").map(Number);
   const period = hh >= 12 ? "PM" : "AM";
   let hour = hh % 12;
   if (hour === 0) hour = 12;
-  return `${hour}:${String(mm).padStart(2, "0")} ${period}`;
+  return `${hour}:${String(mm).padStart(2,"0")} ${period}`;
 }
 function to12HourLabel(slotId) {
   const [start, end] = slotId.split("-");
-  return `${to12(start)} - ${to12(end)}`;
+  return `${to12FromHHMM(start)} - ${to12FromHHMM(end)}`;
 }
 function niceWhen(dateStr, slotLabel) {
   const d = new Date(dateStr + "T00:00:00");
@@ -91,21 +88,23 @@ function niceWhen(dateStr, slotLabel) {
 }
 
 /* ---------- slots, pricing & court meta ---------- */
-const OPEN_HOUR = 0;
-const CLOSE_HOUR = 24;
 const BUFFER_MIN = 10;
 
-function generateSlots() {
+function generate30MinSlots() {
   const slots = [];
-  for (let h = OPEN_HOUR; h < CLOSE_HOUR; h++) {
-    const start = `${String(h).padStart(2, "0")}:00`;
-    const endHour = (h + 1) % 24;
-    const end = `${String(endHour).padStart(2, "0")}:00`;
-    slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h });
+  for (let h = 0; h < 24; h++) {
+    for (let m of [0, 30]) {
+      const start = `${String(h).padStart(2, "0")}:${String(m).padStart(2,"0")}`;
+      // compute end by adding 30 minutes
+      const endDate = new Date(1970,0,1,h,m,0);
+      endDate.setMinutes(endDate.getMinutes() + 30);
+      const end = `${String(endDate.getHours()).padStart(2,"0")}:${String(endDate.getMinutes()).padStart(2,"0")}`;
+      slots.push({ id: `${start}-${end}`, label: `${start}-${end}`, startHour: h, start: start, end: end });
+    }
   }
   return slots;
 }
-const ALL_SLOTS = generateSlots();
+const ALL_SLOTS = generate30MinSlots(); // 48 slots
 
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 
@@ -116,7 +115,7 @@ const COURT_META = {
   "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
 
-/* ---------- NORMALIZATION (robust) ---------- */
+/* ---------- NORMALIZATION (unchanged) ---------- */
 function normalizedKey(val) {
   if (val === undefined || val === null) return "";
   let v = String(val).trim();
@@ -143,58 +142,126 @@ function metaFor(courtId) {
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
-/* ---------- occupancy helpers (fixed) ---------- */
+/* ---------- slot helpers: mapping & expansion ---------- */
+const slotIndexMap = ALL_SLOTS.reduce((acc, s, i) => { acc[s.id] = i; return acc; }, {});
+
+function parseSlotRange(rangeId) {
+  // rangeId like "06:00-07:30" or "06:00-06:30"
+  const [start, end] = rangeId.split("-");
+  return { start, end };
+}
+function slotsBetween(startId, endIdInclusive) {
+  // return array of slotIds from startId up to (but not beyond) endIdInclusive's end time
+  const startIdx = slotIndexMap[startId];
+  if (startIdx === undefined) return [];
+  // find index of a slot whose end equals end of endIdInclusive
+  const targetIdx = slotIndexMap[endIdInclusive];
+  if (targetIdx === undefined) return [];
+  const step = startIdx <= targetIdx ? 1 : -1;
+  const out = [];
+  for (let i = startIdx; i <= targetIdx; i++) out.push(ALL_SLOTS[i].id);
+  return out;
+}
+function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
+  // startSlotId is a 30-min slot id like "06:00-06:30". duration typically multiple of 30.
+  const [start] = startSlotId.split("-");
+  const [hh, mm] = start.split(":").map(Number);
+  const dt = new Date(1970,0,1,hh,mm,0);
+  dt.setMinutes(dt.getMinutes() + durationMins);
+  const end = `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;
+  return `${start}-${end}`;
+}
+
+// Expand an arbitrary booking range (e.g. 06:00-07:30) into constituent 30-min slot ids
+function expandBookingToSlots(bookingRangeId) {
+  const [start, end] = bookingRangeId.split("-");
+  // find start slot index
+  const startSlotId = ALL_SLOTS.find(s => s.id.startsWith(start + "-") || s.id.split("-")[0] === start);
+  if (!startSlotId) return [];
+  // find the index of slot whose end equals end
+  const endIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[1] === end);
+  const startIdx = slotIndexMap[startSlotId.id];
+  if (startIdx === undefined || endIdx === -1 || endIdx < startIdx) {
+    // fallback: compute by minutes
+    const sH = Number(start.split(":")[0]), sM = Number(start.split(":")[1]);
+    const eH = Number(end.split(":")[0]), eM = Number(end.split(":")[1]);
+    const sT = sH * 60 + sM;
+    const eT = eH * 60 + eM;
+    const out = [];
+    for (let t = sT; t < eT; t += 30) {
+      const sh = Math.floor(t / 60), sm = t % 60;
+      const eh = Math.floor((t + 30) / 60), em = (t + 30) % 60;
+      const sId = `${String(sh).padStart(2,"0")}:${String(sm).padStart(2,"0")}-${String(eh).padStart(2,"0")}:${String(em).padStart(2,"0")}`;
+      out.push(sId);
+    }
+    return out;
+  }
+  const out = [];
+  for (let i = startIdx; i <= endIdx; i++) out.push(ALL_SLOTS[i].id);
+  return out;
+}
+
+/* ---------- occupancy helpers (updated for ranges) ---------- */
 function computeSlotOccupancy(bookingDocs) {
+  // occupancy per 30-min slot id: { halves: Set(), full: false, cricket: false, bookings: [] }
   const m = {};
+  // init all slots
+  ALL_SLOTS.forEach(s => {
+    m[s.id] = { halves: new Set(), full: false, cricket: false, bookings: [] };
+  });
+
   bookingDocs.forEach(b => {
     if (!b || !b.slotId) return;
-    const slotId = b.slotId;
     const rawCourt = b.court ?? b.courtId ?? b.selectedCourt ?? "";
     const courtId = normalizedKey(rawCourt);
-    const s = (m[slotId] ||= { halves: new Set(), full: false, cricket: false, bookings: [] });
-    const copy = { ...b, court: courtId };
-    s.bookings.push(copy);
-    if ((b.status || "").toLowerCase() === "cancelled") return;
     const meta = metaFor(courtId);
-    if (meta.type === "half") s.halves.add(courtId);
-    else if (meta.type === "full") s.full = true;
-    else if (meta.type === "cricket") s.cricket = true;
+
+    // expand this booking's slot range to constituent 30-min slot ids
+    const covered = expandBookingToSlots(b.slotId);
+    covered.forEach(slotId => {
+      if (!m[slotId]) m[slotId] = { halves: new Set(), full: false, cricket: false, bookings: [] };
+      const s = m[slotId];
+      const copy = { ...b, court: courtId };
+      s.bookings.push(copy);
+      if ((b.status || "").toLowerCase() === "cancelled") return; // don't mark occupancy if cancelled
+      if (meta.type === "half") s.halves.add(courtId);
+      else if (meta.type === "full") s.full = true;
+      else if (meta.type === "cricket") s.cricket = true;
+    });
   });
   return m;
 }
 
-function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
-  const occ = occupancyMap[slotId] || { halves: new Set(), full: false, cricket: false, bookings: [] };
+// Check if entire requested range (from startSlotId for durationMins) is available for targetCourt
+function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCourt) {
+  const rangeId = makeRangeIdFromStartAndDuration(startSlotId, durationMins);
+  const slotsNeeded = expandBookingToSlots(rangeId);
+  if (!slotsNeeded.length) return { allowed: false, reason: "Invalid time range." };
   const tmeta = metaFor(targetCourt);
-  if (tmeta.type === "half") {
-    if (occ.full) return { allowed: false, reason: "Blocked — full ground already booked." };
-    if (occ.cricket) return { allowed: false, reason: "Blocked — cricket booked." };
-    if (occ.halves.size >= 2) return { allowed: false, reason: "Both halves already booked." };
-    if (occ.halves.has(normalizedKey(targetCourt))) return { allowed: false, reason: "You already booked this half for this slot." };
-    return { allowed: true, reason: null };
-  } else if (tmeta.type === "full") {
-    if (occ.halves.size > 0) return { allowed: false, reason: "Blocked — one or more halves already booked." };
-    if (occ.cricket) return { allowed: false, reason: "Blocked — cricket booked." };
-    if (occ.full) return { allowed: false, reason: "Full ground already booked." };
-    return { allowed: true, reason: null };
-  } else if (tmeta.type === "cricket") {
-    if (occ.halves.size > 0) return { allowed: false, reason: "Blocked — halves already booked." };
-    if (occ.full) return { allowed: false, reason: "Blocked — full ground booked." };
-    if (occ.cricket) return { allowed: false, reason: "Cricket already booked." };
-    return { allowed: true, reason: null };
-  } else {
-    if (occ.bookings.length) return { allowed: false, reason: "Slot already booked." };
-    return { allowed: true, reason: null };
+
+  for (let sid of slotsNeeded) {
+    const occ = occupancyMap[sid] || { halves: new Set(), full: false, cricket: false, bookings: [] };
+    if (tmeta.type === "half") {
+      if (occ.full) return { allowed: false, reason: `Blocked — full ground booked at ${sid}.` };
+      if (occ.cricket) return { allowed: false, reason: `Blocked — cricket booked at ${sid}.` };
+      if (occ.halves.size >= 2) return { allowed: false, reason: `Both halves booked at ${sid}.` };
+      if (occ.halves.has(normalizedKey(targetCourt))) return { allowed: false, reason: `You already have this half booked at ${sid}.` };
+    } else if (tmeta.type === "full") {
+      if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — half already booked at ${sid}.` };
+      if (occ.cricket) return { allowed: false, reason: `Blocked — cricket booked at ${sid}.` };
+      if (occ.full) return { allowed: false, reason: `Full ground booked at ${sid}.` };
+    } else if (tmeta.type === "cricket") {
+      if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — halves already booked at ${sid}.` };
+      if (occ.full) return { allowed: false, reason: `Blocked — full ground booked at ${sid}.` };
+      if (occ.cricket) return { allowed: false, reason: `Cricket already booked at ${sid}.` };
+    } else {
+      if (occ.bookings.length) return { allowed: false, reason: `Slot already booked at ${sid}.` };
+    }
   }
+  return { allowed: true, reason: null };
 }
 
-/* ---------- prevent booking past slots ---------- */
-/**
- * Returns true if the slot + date is already past (local time).
- * - dateISO is "YYYY-MM-DD"
- * - slotId is "HH:MM-HH:MM"
- * We treat a slot as past when its start time is <= now.
- */
+/* ---------- prevent booking past slots (unchanged semantics) ---------- */
 function isSlotInPast(slotId, dateISO) {
   if (!slotId || !dateISO) return false;
   const [start] = slotId.split("-");
@@ -229,18 +296,18 @@ const cwhen = $("#c-when");
 const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
+const mDuration = $("#m-duration"); // NEW
 
 /* ---------- app state ---------- */
 let selectedCourt = normalizedKey('5A'); // canonical initial
-let selectedSlot = null;
+let selectedSlot = null; // selected 30-min slot object
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-
 let selectedBucket = "morning";
 let modalMode = "booking";
 let preferredBookingId = null;
 
-/* ---------- seed static UI ---------- */
+/* ---------- seed static UI (unchanged) ---------- */
 if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 
 (function populateStatic() {
@@ -268,7 +335,7 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
   if (emailLink) { emailLink.href = "mailto:godsturf@gmail.com"; emailLink.textContent = "godsturf@gmail.com"; }
 })();
 
-/* ---------- Firestore helpers ---------- */
+/* ---------- Firestore helpers (unchanged) ---------- */
 async function fetchBookingsForDate(dateISO) {
   if (!dateISO) return [];
   try {
@@ -298,20 +365,21 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- daypart bucket util ---------- */
+/* ---------- daypart bucket util (works on 30-min slots) ---------- */
 function bucketSlots(slots) {
   const buckets = { midnight: [], morning: [], afternoon: [], evening: [] };
   slots.forEach(s => {
-    const h = s.startHour;
-    if (h >= 0 && h < 6) buckets.midnight.push(s);
-    else if (h >= 6 && h < 12) buckets.morning.push(s);
-    else if (h >= 12 && h < 18) buckets.afternoon.push(s);
+    // decide bucket by hour of slot start
+    const hour = Number(s.start.split(":")[0]);
+    if (hour >= 0 && hour < 6) buckets.midnight.push(s);
+    else if (hour >= 6 && hour < 12) buckets.morning.push(s);
+    else if (hour >= 12 && hour < 18) buckets.afternoon.push(s);
     else buckets.evening.push(s);
   });
   return buckets;
 }
 
-/* ---------- derive visible status ---------- */
+/* ---------- derive visible status (unchanged) ---------- */
 function determineSlotStatus(occupancy, slotId) {
   const occ = occupancy[slotId];
   if (!occ || !occ.bookings || !occ.bookings.length) return { label: null, type: null };
@@ -321,7 +389,7 @@ function determineSlotStatus(occupancy, slotId) {
   return { label: "Pending confirmation", type: "pending" };
 }
 
-/* ---------- render slots UI ---------- */
+/* ---------- render slots UI (updated to 30-min slots + availability by minimum 60 min) ---------- */
 async function renderSlots() {
   if (!slotPanel || !slotTabs) return;
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
@@ -350,15 +418,23 @@ async function renderSlots() {
 
   const buckets = bucketSlots(ALL_SLOTS);
 
+  // When computing availability for a slot displayed, we consider the minimum booking length (1 hour)
+  function availableStartsForSlot(startSlotId, courtKey) {
+    // return true if you can start a booking at startSlotId for the minimum (60)
+    return isRangeAvailableFor(occupancy, startSlotId, 60, courtKey).allowed;
+  }
+
   const bucketInfo = {};
   Object.entries(buckets).forEach(([key, items]) => {
     const total = items.length;
     let available = 0;
-    items.forEach(s => { if (isSlotAvailableFor(occupancy, s.id, selectedCourt).allowed && !isSlotInPast(s.id, selectedDate)) available++; });
+    items.forEach(s => {
+      if (availableStartsForSlot(s.id, selectedCourt) && !isSlotInPast(s.id, selectedDate)) available++;
+    });
     bucketInfo[key] = { total, available };
   });
 
-  // render tabs (equal-width buttons) - with smaller minWidth for phones
+  // render tabs
   slotTabs.innerHTML = "";
   const tabOrder = [
     { key: "midnight", title: "Midnight (00:00 AM–6:00 AM)" },
@@ -386,9 +462,8 @@ async function renderSlots() {
       "border",
       isActive ? "bg-emerald-600 text-white" : "bg-white",
     ].join(" ");
-    // responsive equal widths: smaller min width helps phones
     btn.style.flex = "1 1 0";
-    btn.style.minWidth = "120px"; // reduced so tabs fit on narrow screens
+    btn.style.minWidth = "120px";
     const badgeClass = isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700";
     btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${badgeClass} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
     addTap(btn, () => { selectedBucket = t.key; renderSlots(); });
@@ -430,7 +505,6 @@ async function renderSlots() {
   list.className = "space-y-2";
 
   selectedItems.forEach(s => {
-    // item becomes column on small screens and row on larger screens
     const item = document.createElement("div");
     item.className = "flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-xl bg-white gap-3";
 
@@ -445,10 +519,9 @@ async function renderSlots() {
     right.className = "flex flex-col sm:flex-row items-stretch sm:items-center gap-2";
 
     const past = isSlotInPast(s.id, selectedDate);
-    const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
+    const availForMin = isRangeAvailableFor(occupancy, s.id, 60, selectedCourt);
 
     if (past) {
-      // Past slots: show "Past" pill, no booking/wishlist actions
       const pill = document.createElement("span");
       pill.className = "inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200";
       pill.textContent = "Past";
@@ -468,8 +541,7 @@ async function renderSlots() {
       disabledBtn.disabled = true;
       right.appendChild(disabledBtn);
 
-    } else if (!avail.allowed) {
-      // center: status pill (Pending / Booked)
+    } else if (!availForMin.allowed) {
       const st = determineSlotStatus(occupancy, s.id);
       const label = st.label || "Booked";
       const type = st.type || "booked";
@@ -479,7 +551,6 @@ async function renderSlots() {
       pill.textContent = label;
       middle.appendChild(pill);
 
-      // right: wishlist (count + button)
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
@@ -500,7 +571,7 @@ async function renderSlots() {
       right.appendChild(wishBtn);
 
     } else {
-      // available & not past: right contains Book button and wishlist badge (if any)
+      // slot is available at least for min 60 minutes
       const bookBtn = document.createElement("button");
       bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 w-full sm:w-auto";
       bookBtn.textContent = "Book";
@@ -514,7 +585,6 @@ async function renderSlots() {
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
       } else {
-        // allow user to join wishlist even when none exist yet
         const wishBtn = document.createElement("button");
         wishBtn.className = "px-3 py-2 text-sm rounded-xl border hover:bg-gray-50 w-full sm:w-auto";
         wishBtn.textContent = "Wishlist";
@@ -536,7 +606,7 @@ async function renderSlots() {
   slotPanel.appendChild(list);
 }
 
-/* ---------- modal & validation ---------- */
+/* ---------- modal & validation (updated to support durations) ---------- */
 function showFieldError(fieldEl, message) { if (!fieldEl) return; console.log("field error", fieldEl, message); }
 function clearFieldErrors() {}
 function setConfirmLoading(isLoading) {
@@ -558,6 +628,14 @@ function validateModalFields() {
   const phone = mPhone?.value?.trim() || "";
   if (name.length < 2) { showFieldError(mName, "Please enter your full name (min 2 characters)."); return { ok: false, reason: "name" }; }
   if (!/^\+?\d{8,15}$/.test(phone)) { showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91..."); return { ok: false, reason: "phone" }; }
+  // duration validation (only for booking)
+  if (modalMode === "booking") {
+    const dur = Number(mDuration?.value || 0);
+    if (!dur || dur < 60 || dur % 30 !== 0) {
+      showFieldError(mDuration, "Choose a valid duration (min 60, increments 30).");
+      return { ok: false, reason: "duration" };
+    }
+  }
   return { ok: true, name, phone };
 }
 
@@ -578,6 +656,8 @@ function openBookingModal(slot) {
   if (mConfirm) mConfirm.textContent = "Confirm";
   preferredBookingId = null;
   resetModalFields();
+  // set default duration to 60
+  if (mDuration) mDuration.value = "60";
   openModal();
 }
 function openWishlistModal(slot, prefBookingId = null) {
@@ -604,6 +684,7 @@ function resetModalFields() {
   if (mPhone) mPhone.value = "";
   if (mCoupon) mCoupon.value = "";
   if (mNotes) mNotes.value = "";
+  if (mDuration) { mDuration.value = "60"; }
   if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
   clearFieldErrors();
   setConfirmLoading(false);
@@ -616,6 +697,7 @@ mConfirm?.addEventListener("click", async () => {
   if (!v.ok) {
     if (v.reason === "name") toast("Please enter your name.", { error: true });
     if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
+    if (v.reason === "duration") toast("Choose a valid duration (min 60 mins).", { error: true });
     return;
   }
   const { name, phone } = v;
@@ -633,30 +715,31 @@ mConfirm?.addEventListener("click", async () => {
   const normCourt = normalizedKey(selectedCourt);
 
   if (modalMode === "booking") {
+    const durationMins = Number(mDuration?.value || 60);
+    // make booking range id, e.g. "06:00-07:30"
+    const slotRangeId = makeRangeIdFromStartAndDuration(selectedSlot.id, durationMins);
     const booking = {
       userName: name,
       phone,
       coupon: coupon || null,
       notes: notes || null,
       court: normCourt,
-      slotId: selectedSlot.id,
-      slotLabel: selectedSlot.label,
+      slotId: slotRangeId,
+      slotLabel: `${to12HourLabel(slotRangeId)}`,
       date: selectedDate,
       amount: selectedAmount,
+      durationMins,
       status: "pending",
       createdAt: serverTimestamp()
     };
 
     try {
-      const conflictQ = query(collection(db, "bookings"), where("date", "==", selectedDate), where("slotId", "==", selectedSlot.id));
-      const conflictSnap = await getDocs(conflictQ);
-      const existing = [];
-      conflictSnap.forEach(d => { const data = d.data(); data._id = d.id; existing.push(data); });
-
+      // Fetch all bookings for the date and compute occupancy locally (needed for range overlap checks)
+      const existing = await fetchBookingsForDate(selectedDate);
       const occMap = computeSlotOccupancy(existing);
-      const availabilityCheck = isSlotAvailableFor(occMap, selectedSlot.id, normCourt);
+      const availabilityCheck = isRangeAvailableFor(occMap, selectedSlot.id, durationMins, normCourt);
       if (!availabilityCheck.allowed) {
-        alert("Sorry — that slot is not available for the selected court: " + (availabilityCheck.reason || "Unavailable"));
+        alert("Sorry — that slot is not available for the selected court/time: " + (availabilityCheck.reason || "Unavailable"));
         closeModalFn();
         renderSlots();
         return;
@@ -666,10 +749,10 @@ mConfirm?.addEventListener("click", async () => {
       const ref = await addDoc(collection(db, "bookings"), booking);
 
       if (cid) cid.textContent = ref.id;
-      if (cwhen) cwhen.textContent = `${selectedDate} · ${selectedSlot.label}`;
+      if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
       if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
       if (camount) camount.textContent = `₹${selectedAmount}`;
-      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
+      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
 
       show(confirmCard);
@@ -737,7 +820,8 @@ mConfirm?.addEventListener("click", async () => {
 /* ---------- hide confirm card on date change ---------- */
 dateInput?.addEventListener("change", ()=> hide(confirmCard));
 
-/* ---------- PITCH SELECTOR ---------- */
+/* ---------- PITCH SELECTOR (unchanged) ---------- */
+// ... keep your existing initPitchSelector code as-is or copy from original file if needed
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
@@ -745,7 +829,6 @@ function initPitchSelector() {
     return { setSelected: (k)=>{} };
   }
 
-  // Use uploaded gallery preview path (platform converts the local path to a URL)
   const previewUrl = './assets/turf_left.jpg';
 
   container.innerHTML = `
