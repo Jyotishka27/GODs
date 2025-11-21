@@ -341,10 +341,10 @@ async function renderSlots() {
   // render tabs (equal-width buttons) - with smaller minWidth for phones
   slotTabs.innerHTML = "";
   const tabOrder = [
-    { key: "midnight", title: "Midnight (12:00 AM–6:00 AM)" },
+    { key: "midnight", title: "Midnight (00:00 AM–6:00 AM)" },
     { key: "morning", title: "Morning (6:00 AM–12:00 PM)" },
     { key: "afternoon", title: "Afternoon (12:00 PM–6:00 PM)" },
-    { key: "evening", title: "Evening (6:00 PM–12:00 AM)" }
+    { key: "evening", title: "Evening (6:00 PM–00:00 AM)" }
   ];
 
   const tabsWrap = document.createElement("div");
