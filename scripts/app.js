@@ -51,14 +51,23 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
+/* Improved addTap: use touchstart on touch devices, fallback to click.
+   This avoids duplicate events (touch + click) and makes interactions snappier. */
 function addTap(el, handler) {
   if (!el) return;
-  el.addEventListener('click', handler);
-  el.addEventListener('touchstart', function touchHandler(e){
-    // prevent duplicate click and allow immediate touch feedback
-    e.preventDefault();
-    handler(e);
-  }, { passive: false });
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isTouch) {
+    // Use touchstart for instant response on touch devices.
+    el.addEventListener('touchstart', function touchHandler(e){
+      // prevent duplicate click event
+      e.preventDefault();
+      try { handler(e); } catch(err){ console.error(err); }
+    }, { passive: false });
+  } else {
+    el.addEventListener('click', function clickHandler(e){
+      try { handler(e); } catch(err){ console.error(err); }
+    });
+  }
 }
 
 /* ---------- debug: surface runtime errors into UI ---------- */
@@ -368,28 +377,6 @@ function createTimelineElement() {
   return { container };
 }
 
-/* apply visual highlight to selected slots in the grid */
-function applySelectionHighlights(gridEl) {
-  if (!gridEl) return;
-  const buttons = gridEl.querySelectorAll("button[data-slot-id]");
-  buttons.forEach(b => {
-    const sid = b.getAttribute("data-slot-id");
-    if (timelineSelection.has(sid)) {
-      b.classList.remove("bg-white","slot-partial");
-      b.classList.add("slot-selected");
-      b.setAttribute("aria-pressed","true");
-    } else {
-      b.setAttribute("aria-pressed","false");
-      if (b.disabled) {
-        // keep disabled styling
-      } else {
-        b.classList.remove("slot-selected");
-        b.classList.add("bg-white");
-      }
-    }
-  });
-}
-
 /* show selection summary below timeline and show Book / Waitlist / Clear actions */
 function renderSelectionSummary(gridEl, occupancyMap) {
   if (!gridEl) return;
@@ -466,7 +453,13 @@ function renderSelectionSummary(gridEl, occupancyMap) {
   clearBtn.textContent = "Clear";
   addTap(clearBtn, ()=> {
     timelineSelection = new Set();
-    applySelectionHighlights(gridEl);
+    // update visual highlights
+    const allButtons = gridEl.querySelectorAll("button[data-slot-id]");
+    allButtons.forEach(b => {
+      b.classList.remove("slot-selected");
+      b.classList.add("bg-white");
+      b.setAttribute("aria-pressed","false");
+    });
     renderSelectionSummary(gridEl, occupancyMap);
   });
 
@@ -590,6 +583,20 @@ async function renderSlots() {
     btn.style.justifyContent = "center";
     btn.style.gap = "4px";
 
+    // Make slot buttons easier to tap on small phones
+    if (window.innerWidth <= 420) {
+      btn.style.minWidth = '72px';
+      btn.style.height = '48px';
+      btn.style.padding = '6px 10px';
+      btn.classList.add('slot-btn-mobile');
+    } else if (window.innerWidth <= 768) {
+      btn.style.minWidth = '56px';
+      btn.style.height = '40px';
+    } else {
+      btn.style.minWidth = '40px';
+      btn.style.height = '36px';
+    }
+
     const past = isSlotInPast(slot.id, selectedDate);
     const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
@@ -637,7 +644,9 @@ async function renderSlots() {
     btn.appendChild(sub);
 
     addTap(btn, (e) => {
-      e.preventDefault();
+      // e.preventDefault called inside addTap for touch devices; guard here for click path
+      if (!e.defaultPrevented && e.type === 'click') e.preventDefault && e.preventDefault();
+
       if (btn.disabled) {
         if (state === "blocked") {
           openWishlistModal(slot, null);
@@ -648,7 +657,8 @@ async function renderSlots() {
       if (timelineSelection.has(sid)) timelineSelection.delete(sid);
       else timelineSelection.add(sid);
       normalizeSelectionToContiguous();
-      // refresh visuals & summary
+
+      // refresh visuals for this bucket
       const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
       allButtons.forEach(b => {
         const id = b.getAttribute("data-slot-id");
@@ -659,13 +669,17 @@ async function renderSlots() {
         } else {
           b.setAttribute("aria-pressed","false");
           if (b.disabled) {
-            // nothing
+            // keep disabled look
           } else {
             b.classList.remove("slot-selected");
             b.classList.add("bg-white");
           }
         }
       });
+
+      // center the clicked element in the timeline on small screens
+      centerTimelineNode(btn);
+
       renderSelectionSummary(bucketGrid, occupancy);
     });
 
@@ -675,8 +689,15 @@ async function renderSlots() {
   container.appendChild(bucketGrid);
   slotPanel.appendChild(container);
 
-  // initial empty summary
+  // initial empty summary or selection summary
   renderSelectionSummary(bucketGrid, occupancy);
+
+  // if there is a previously selected tick, ensure it's visible
+  if (timelineSelection.size) {
+    const firstId = Array.from(timelineSelection)[0];
+    const el = bucketGrid.querySelector(`[data-slot-id="${firstId}"]`);
+    if (el) centerTimelineNode(el);
+  }
 }
 
 /* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
@@ -686,6 +707,21 @@ function normalizeSelectionToContiguous() {
   const min = indices[0], max = indices[indices.length - 1];
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
+}
+
+/* helper: center a node inside the horizontally scrollable timeline container */
+function centerTimelineNode(node) {
+  try {
+    const container = node && node.closest('.timeline-container');
+    if (!container) return;
+    // the actual scrollable element in your markup is the timeline-container (overflow-x:auto)
+    const rect = container.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const nodeCenter = (nodeRect.left + nodeRect.right) / 2;
+    const containerLeft = rect.left;
+    const offset = nodeCenter - containerLeft - (rect.width / 2);
+    container.scrollBy({ left: offset, behavior: 'smooth' });
+  } catch (e) { /* ignore */ }
 }
 
 /* ---------- modal helpers & booking flow ---------- */
@@ -700,7 +736,6 @@ function openBookingModalWithRange(startSlot, durationMins) {
   resetModalFields();
   const mD = $("#m-duration");
   if (mD) mD.value = String(durationMins);
-  // consistent dataset key used everywhere: durationMins
   if (modal) {
     modal.dataset.startSlot = startSlot.id;
     modal.dataset.durationMins = String(durationMins);
