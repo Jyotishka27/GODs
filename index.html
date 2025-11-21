@@ -16,6 +16,12 @@
   <meta property="og:type" content="website" />
   <meta property="og:image" content="./assets/Logo_RED.jpg" />
   <meta name="theme-color" content="#22c55e"/>
+
+  <!-- Leaflet CSS (for the interactive map) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-o9N1j7kG6bV+g7o4gkX1gk2KQmKk1bP4d4w3x23h2mA="
+        crossorigin=""/>
+
   <style>
     body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial; }
 
@@ -36,6 +42,12 @@
 
     /* Improve focus outline visibility on keyboard nav */
     :focus { outline: 3px solid rgba(34,197,94,0.18); outline-offset: 2px; }
+
+    /* fallback background while tiles load */
+    #map { background: linear-gradient(180deg,#f8fafc,#ffffff); }
+
+    /* ensure popup content wraps nicely on small screens */
+    .leaflet-popup-content-wrapper { max-width: 260px; }
   </style>
 
   <link rel="manifest" href="./manifest.webmanifest" />
@@ -363,6 +375,92 @@
       });
 
       // swipe/scroll friendly: ensure body not locked by modal on small devices (app.js may set styles)
+    })();
+  </script>
+
+  <!-- Leaflet JS + map init (add before closing body) -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-o3Qm2I8dJgV6t7R4V+IYyc1YyA5qjv6Yg2QYV0y+8E0="
+          crossorigin=""></script>
+
+  <script>
+    (function(){
+      const mapEl = document.getElementById('map');
+      if (!mapEl) return;
+
+      // ========== CONFIG ==========
+      const lat = 22.511163411353493;
+      const lng = 88.4184385518213;
+      const startZoom = 15;
+
+      // Light tiles (OpenStreetMap)
+      const lightTiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      });
+
+      // Dark tiles (Carto)
+      const darkTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap, &copy; CartoDB'
+      });
+
+      // init map
+      const map = L.map('map', {
+        center: [lat, lng],
+        zoom: startZoom,
+        layers: [lightTiles],
+        zoomControl: false,
+        scrollWheelZoom: false,
+        tap: true,
+        touchZoom: true
+      });
+
+      // place zoom control bottom-right (good for mobile)
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+      // scale control
+      L.control.scale({ position: 'bottomright', metric: true, imperial: false }).addTo(map);
+
+      // layer switcher (light/dark)
+      const baseMaps = { "Light": lightTiles, "Dark": darkTiles };
+      L.control.layers(baseMaps, null, { collapsed: true, position: 'topright' }).addTo(map);
+
+      // Custom marker icon using your uploaded image (platform will convert this local path to a usable URL)
+      const iconUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
+      const turfIcon = L.icon({
+        iconUrl,
+        iconSize: [56, 56],
+        iconAnchor: [28, 56],
+        popupAnchor: [0, -48]
+      });
+
+      // Marker + popup (includes directions link)
+      const googleDirections = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      const popupHtml = `
+        <div style="font-size:14px;line-height:1.2">
+          <strong>GODs Turf</strong><br/>
+          GC69+F85, Anandapur Rd, Mundapara, Kolkata<br/>
+          <a href="${googleDirections}" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;color:#0f766e;text-decoration:underline">Get directions</a>
+        </div>
+      `;
+
+      const marker = L.marker([lat, lng], { icon: turfIcon }).addTo(map);
+      marker.bindPopup(popupHtml, { closeButton: true, minWidth: 160 });
+
+      // open popup automatically (helpful on both mobile & desktop)
+      try { marker.openPopup(); } catch(e){}
+
+      // ensure map sizes correctly after layout changes
+      setTimeout(()=> map.invalidateSize(), 250);
+      window.addEventListener('resize', () => setTimeout(()=> map.invalidateSize(), 120));
+
+      // close popup on Escape
+      document.addEventListener('keydown', (e) => { if(e.key === 'Escape') map.closePopup(); });
+
+      // expose for debugging
+      window.__GODsTurf = window.__GODsTurf || {};
+      window.__GODsTurf.map = map;
+      window.__GODsTurf.marker = marker;
     })();
   </script>
 </body>
