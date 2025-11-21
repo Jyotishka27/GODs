@@ -188,6 +188,26 @@ function isSlotAvailableFor(occupancyMap, slotId, targetCourt) {
   }
 }
 
+/* ---------- prevent booking past slots ---------- */
+/**
+ * Returns true if the slot + date is already past (local time).
+ * - dateISO is "YYYY-MM-DD"
+ * - slotId is "HH:MM-HH:MM"
+ * We treat a slot as past when its start time is <= now.
+ */
+function isSlotInPast(slotId, dateISO) {
+  if (!slotId || !dateISO) return false;
+  const [start] = slotId.split("-");
+  const [hhRaw, mmRaw] = start.split(":");
+  const hh = Number(hhRaw) || 0;
+  const mm = Number(mmRaw) || 0;
+
+  const slotDate = new Date(dateISO + "T00:00:00");
+  slotDate.setHours(hh, mm, 0, 0);
+
+  return slotDate.getTime() <= Date.now();
+}
+
 /* ---------- DOM refs ---------- */
 const dateInput = $("#date");
 const slotTabs = $("#slotTabs");
@@ -334,7 +354,7 @@ async function renderSlots() {
   Object.entries(buckets).forEach(([key, items]) => {
     const total = items.length;
     let available = 0;
-    items.forEach(s => { if (isSlotAvailableFor(occupancy, s.id, selectedCourt).allowed) available++; });
+    items.forEach(s => { if (isSlotAvailableFor(occupancy, s.id, selectedCourt).allowed && !isSlotInPast(s.id, selectedDate)) available++; });
     bucketInfo[key] = { total, available };
   });
 
@@ -424,9 +444,31 @@ async function renderSlots() {
     const right = document.createElement("div");
     right.className = "flex flex-col sm:flex-row items-stretch sm:items-center gap-2";
 
+    const past = isSlotInPast(s.id, selectedDate);
     const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
 
-    if (!avail.allowed) {
+    if (past) {
+      // Past slots: show "Past" pill, no booking/wishlist actions
+      const pill = document.createElement("span");
+      pill.className = "inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-700 border border-gray-200";
+      pill.textContent = "Past";
+      middle.appendChild(pill);
+
+      const count = (wishlistMap[s.id] || []).length;
+      if (count > 0) {
+        const badge = document.createElement("span");
+        badge.className = "px-2 py-1 rounded-full text-xs border bg-white";
+        badge.textContent = `Wishlist · ${count}`;
+        right.appendChild(badge);
+      }
+
+      const disabledBtn = document.createElement("button");
+      disabledBtn.className = "px-3 py-2 text-sm rounded-xl border text-gray-400 w-full sm:w-auto cursor-not-allowed";
+      disabledBtn.textContent = "Not available";
+      disabledBtn.disabled = true;
+      right.appendChild(disabledBtn);
+
+    } else if (!avail.allowed) {
       // center: status pill (Pending / Booked)
       const st = determineSlotStatus(occupancy, s.id);
       const label = st.label || "Booked";
@@ -458,7 +500,7 @@ async function renderSlots() {
       right.appendChild(wishBtn);
 
     } else {
-      // available: right contains Book button and wishlist badge (if any)
+      // available & not past: right contains Book button and wishlist badge (if any)
       const bookBtn = document.createElement("button");
       bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 w-full sm:w-auto";
       bookBtn.textContent = "Book";
@@ -523,6 +565,10 @@ function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
 function unlockBodyScroll() { document.body.style.overflow = ''; }
 
 function openBookingModal(slot) {
+  if (isSlotInPast(slot.id, selectedDate)) {
+    toast("Cannot book a slot that has already started.", { error: true });
+    return;
+  }
   modalMode = "booking";
   selectedSlot = slot;
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -535,6 +581,10 @@ function openBookingModal(slot) {
   openModal();
 }
 function openWishlistModal(slot, prefBookingId = null) {
+  if (isSlotInPast(slot.id, selectedDate)) {
+    toast("Cannot join wishlist for a slot that has already started.", { error: true });
+    return;
+  }
   modalMode = "wishlist";
   selectedSlot = slot;
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
@@ -573,6 +623,12 @@ mConfirm?.addEventListener("click", async () => {
   const notes = mNotes?.value?.trim();
 
   if (!selectedCourt || !selectedSlot || !selectedDate) { return alert("Select a pitch and date first."); }
+
+  // final guard before saving
+  if (isSlotInPast(selectedSlot.id, selectedDate)) {
+    toast("That slot is in the past — cannot save booking or wishlist.", { error: true });
+    return;
+  }
 
   const normCourt = normalizedKey(selectedCourt);
 
@@ -829,7 +885,7 @@ function initPitchSelector() {
 
 /* ---------- initialization ---------- */
 window.addEventListener("load", async () => {
-  selectedDate = dateInput?.value || fmtDateISO(new Date());
+  selectedDate = dateInput?.value || fmtDateISO(new Date()));
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
   let selectorApi = { setSelected: (k)=>{} };
