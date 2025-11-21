@@ -336,7 +336,7 @@ async function renderSlots() {
     bucketInfo[key] = { total, available };
   });
 
-  // render tabs
+  // render tabs (equal-width buttons)
   slotTabs.innerHTML = "";
   const tabOrder = [
     { key: "midnight", title: "Midnight (12:00 AM–6:00 AM)" },
@@ -344,19 +344,46 @@ async function renderSlots() {
     { key: "afternoon", title: "Afternoon (12:00 PM–6:00 PM)" },
     { key: "evening", title: "Evening (6:00 PM–12:00 AM)" }
   ];
+
+  // container: full width, allow wrapping on tiny screens
   const tabsWrap = document.createElement("div");
-  tabsWrap.className = "flex gap-2 items-center flex-wrap";
+  tabsWrap.className = "w-full flex gap-2 flex-wrap";
 
   tabOrder.forEach(t => {
     const isActive = (t.key === selectedBucket);
+
+    // each button is a flex child that grows equally
     const btn = document.createElement("button");
-    btn.className = `px-3 py-1 rounded-full border text-sm flex items-center gap-2 ${isActive ? 'bg-emerald-600 text-white' : 'bg-white'}`;
     btn.setAttribute("data-bucket", t.key);
-    btn.innerHTML = `<span>${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
+
+    // use flex layout inside the button so the title and badge align nicely
+    btn.className = [
+      "flex",
+      "items-center",
+      "justify-center",
+      "gap-2",
+      "px-3",
+      "py-2",
+      "rounded-full",
+      "text-sm",
+      "border",
+      isActive ? "bg-emerald-600 text-white" : "bg-white",
+    ].join(" ");
+
+    // ensure equal widths
+    btn.style.flex = "1 1 0";      // grow, shrink, basis 0 -> equal widths
+    btn.style.minWidth = "160px";  // prevents awkward wrapping of long labels on small screens
+
+    // content: label + small availability badge
+    const badgeClass = isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700";
+    btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${badgeClass} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
+
     btn.addEventListener("click", () => { selectedBucket = t.key; renderSlots(); });
     tabsWrap.appendChild(btn);
   });
+
   slotTabs.appendChild(tabsWrap);
+
 
   // render selected bucket
   slotPanel.innerHTML = "";
