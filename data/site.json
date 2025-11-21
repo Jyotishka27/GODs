@@ -5,8 +5,8 @@
   "email": "hello@gods.example",
   "address": "GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150",
   "coords": {
-    "lat": 22.594,
-    "lng": 88.479
+    "lat": 22.511296661107526,
+    "lng": 88.41870199029681
   },
   "currency": "INR",
   "timezone": "Asia/Kolkata",
