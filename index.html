@@ -9,218 +9,218 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
     :root{--accent:#16a34a;--muted:#6b7280}
-    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0}
-
-    /* HERO adjustments to be friendlier on small screens */
+    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
     .hero-height{height:36vh}
     @media(min-width:768px){.hero-height{height:48vh}}
-
-    /* Timeline/buttons: mobile-friendly sizes */
     .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:.5rem}
     .timeline-grid{display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(56px, min-content);gap:6px;align-items:center}
     .slot-btn{min-width:56px;padding:.45rem .6rem;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border-radius:.375rem;border:1px solid #e5e7eb;font-size:12px;background:#fff}
-    .slot-btn.small{min-width:48px;font-size:11px;padding:.35rem .45rem}
-
-    /* partial/blocked/past states */
     .slot-past{background:#f8fafc;color:#9ca3af;border-color:#f1f5f9}
     .slot-blocked{background:#fff1f2;color:#991b1b;border-color:#fee2e2}
     .slot-partial{background:#fffbeb;color:#92400e;border-color:#fef3c7}
     .slot-selected{background:var(--accent);color:#fff;border-color:#15803d}
-
-    /* Tabs wrap horizontally and scroll on small screens */
     #slotTabs{display:flex;gap:.5rem;overflow-x:auto;padding-bottom:.5rem}
-    #slotTabs button{white-space:nowrap}
-
-    /* Pitch selector stacking on small screens */
     #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
-    @media(max-width:640px){
-      #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem}
-      #pitchSelectorContainer .w-56{width:100%}
-    }
-
-    /* Modal: full-screen friendly on very small devices */
-    @media(max-width:480px){
-      #modal > div{height:100vh;border-radius:0;padding:16px}
-    }
-
-    /* Improve touch targets for CTAs */
+    @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} #pitchSelectorContainer .w-56{width:100%} }
+    @media(max-width:480px){ #modal > div{height:100vh;border-radius:0;padding:16px} }
     .touch-cta{padding:12px 16px;border-radius:12px}
-
-    /* make right-side aside stack under content on very small screens */
-    @media(max-width:880px){
-      .md\\:col-span-2{grid-column:1 / -1}
-    }
+    @media(max-width:880px){ .md\\:col-span-2{grid-column:1 / -1} }
+    a.wa-btn{display:inline-block;padding:10px 12px;border-radius:10px;background:var(--accent);color:#fff;text-decoration:none}
   </style>
 </head>
+
 <body class="bg-white text-gray-900">
 
-<!-- page markup unchanged structurally, trimmed for clarity; booking area preserved -->
-<section id="book" class="max-w-6xl mx-auto px-4 py-6">
-  <div class="grid md:grid-cols-3 gap-6">
-    <div class="md:col-span-2 space-y-4">
-      <div class="p-4 border rounded-2xl">
-        <div class="flex flex-wrap items-center gap-3">
+  <!-- header simplified to keep mobile-first -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a class="flex items-center gap-2" href="#" aria-label="GODs Turf home">
+        <img src="./assets/Logo_RED.jpg" alt="logo" class="h-9 w-9 object-cover rounded" />
+        <span class="font-extrabold tracking-tight">GODs Turf</span>
+      </a>
+      <div class="flex items-center gap-2">
+        <a id="waLink" class="wa-btn" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        <a id="callLinkHeader" class="px-3 py-2 rounded-xl border" href="#">Call</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO: small video or fallback image -->
+  <section class="relative">
+    <div class="relative">
+      <video class="w-full object-cover hero-height" autoplay muted loop playsinline>
+        <source src="./assets/turf_video.mp4" type="video/mp4">
+        <!-- fallback image -->
+        <img src="./assets/turf_left.jpg" alt="turf preview" class="w-full object-cover hero-height">
+      </video>
+      <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-black/18 to-black/10"></div>
+    </div>
+    <div class="absolute inset-0 flex items-center">
+      <div class="max-w-6xl mx-auto px-4">
+        <h1 class="text-white text-2xl sm:text-3xl md:text-4xl font-extrabold leading-tight">Play on premium floodlit turf</h1>
+        <p class="text-white/90 mt-3 max-w-2xl text-sm sm:text-base">Live availability, instant confirmation and flexible reschedules.</p>
+        <a href="#book" class="inline-block mt-4 touch-cta px-5 py-3 rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700">Book a slot</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Booking widget -->
+  <section id="book" class="max-w-6xl mx-auto px-4 py-6">
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="md:col-span-2 space-y-4">
+        <!-- date + pitch selector -->
+        <div class="p-4 border rounded-2xl bg-white">
+          <label for="date" class="text-xs text-gray-600 block mb-2">Choose date</label>
           <input id="date" type="date" class="w-full md:w-auto border rounded-xl px-3 py-2" />
-        </div>
+          <div id="pitchSelectorContainer" class="mt-4"></div>
 
-        <!-- Pitch selector container (injected by script) -->
-        <div id="pitchSelectorContainer" class="mt-4"></div>
-
-        <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
-          <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
-            <div class="text-xs text-gray-500">Selected pitch</div>
-            <div id="selectedPitch" class="font-medium">—</div>
-          </div>
-          <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
-            <div class="text-xs text-gray-500">Price</div>
-            <div id="selectedPrice" class="font-medium">—</div>
+          <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
+            <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
+              <div class="text-xs text-gray-500">Selected pitch</div>
+              <div id="selectedPitch" class="font-medium">—</div>
+            </div>
+            <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
+              <div class="text-xs text-gray-500">Price</div>
+              <div id="selectedPrice" class="font-medium">—</div>
+            </div>
           </div>
         </div>
+
+        <!-- slots -->
+        <div class="p-4 border rounded-2xl bg-white">
+          <h3 class="font-semibold mb-3">Available slots</h3>
+          <div id="slotTabs" class="mb-3"></div>
+          <div id="slotPanel" role="list" aria-live="polite" class="space-y-2"></div>
+        </div>
+
+        <!-- confirmation card (populated by script) -->
+        <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
+          <h4 class="font-semibold mb-1">Booking created</h4>
+          <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
+          <div class="grid sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm">
+            <div><span class="text-gray-500">Booking ID:</span> <span id="c-id" class="font-mono"></span></div>
+            <div><span class="text-gray-500">When:</span> <span id="c-when"></span></div>
+            <div><span class="text-gray-500">Court:</span> <span id="c-court"></span></div>
+            <div><span class="text-gray-500">Amount:</span> <span id="c-amount"></span></div>
+          </div>
+          <div class="mt-3 flex flex-col sm:flex-row gap-2">
+            <a id="confirmWA" target="_blank" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-center">Message on WhatsApp</a>
+            <a href="#rules" class="px-4 py-2 rounded-xl border text-center">See rules</a>
+          </div>
+        </div>
       </div>
 
-      <div class="p-4 border rounded-2xl">
-        <h3 class="font-semibold mb-3">Available slots</h3>
-        <div id="slotTabs" class="mb-3"></div>
-        <div id="slotPanel" role="list" aria-live="polite" class="space-y-2"></div>
-      </div>
+      <!-- aside -->
+      <aside class="space-y-4">
+        <div class="p-4 border rounded-2xl bg-white">
+          <h3 class="font-semibold">Facilities & Amenities</h3>
+          <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
+          <div class="mt-4 text-sm text-gray-600">
+            <p><strong>Hours:</strong> 24 × 7</p>
+            <p><strong>Buffer:</strong> 10 mins between slots</p>
+            <p><strong>Peak:</strong> 5 PM – 10 PM</p>
+          </div>
+        </div>
 
-      <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200"></div>
+        <div class="p-4 border rounded-2xl bg-white" id="contact">
+          <h3 class="font-semibold">Contact</h3>
+          <p class="text-sm mt-2"><span id="addr">Near City Sports Complex, New Town, Kolkata</span></p>
+          <div class="mt-3 space-y-2 text-sm">
+            <a id="emailLink" class="block underline" href="mailto:godsturf@gmail.com">godsturf@gmail.com</a>
+            <a id="callLink" class="block underline" href="tel:+917003396909">Call +91-70033-96909</a>
+          </div>
+        </div>
+      </aside>
     </div>
+  </section>
 
-    <aside class="space-y-4">
-      <div class="p-4 border rounded-2xl">
-        <h3 class="font-semibold">Facilities & Amenities</h3>
-        <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
-      </div>
-    </aside>
-  </div>
-</section>
-
-<!-- Modal (mobile-friendly) -->
-<div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
-  <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
-    <div class="flex items-center justify-between mb-2"><h3 id="m-title" class="font-semibold">Booking</h3><button id="closeModal">✕</button></div>
-    <p id="m-when" class="text-sm text-gray-600 mb-2"></p>
-    <p>Amount: <span id="m-price" class="font-semibold"></span></p>
-    <div class="space-y-2 mt-2">
-      <input id="m-name" class="w-full border rounded-xl px-3 py-2" placeholder="Your Name"/>
-      <input id="m-phone" class="w-full border rounded-xl px-3 py-2" placeholder="Phone with country code (e.g., +91...)"/>
-      <input id="m-coupon" class="w-full border rounded-xl px-3 py-2" placeholder="Promo code (optional)"/>
-      <textarea id="m-notes" class="w-full border rounded-xl px-3 py-2" placeholder="Notes (optional)"></textarea>
+  <!-- rules section (optional but app may reference #rulesList) -->
+  <section id="rules" class="max-w-6xl mx-auto px-4 pb-8">
+    <div class="p-4 border rounded-2xl bg-white">
+      <h3 class="font-semibold mb-2">Rules</h3>
+      <ul id="rulesList" class="space-y-2 text-sm"></ul>
     </div>
-    <div class="flex gap-2 justify-end mt-3"><button id="m-cancel" class="px-3 py-2 rounded-xl border">Cancel</button><button id="m-confirm" class="px-3 py-2 rounded-xl bg-emerald-600 text-white">Confirm</button></div>
+  </section>
+
+  <!-- modal -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
+    <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="m-title" class="font-semibold">Booking</h3>
+        <button id="closeModal" class="text-gray-500 hover:text-black" aria-label="Close dialog">✕</button>
+      </div>
+      <p id="m-when" class="text-sm text-gray-600 mb-2"></p>
+      <p class="text-sm mb-2">Amount: <span id="m-price" class="font-semibold"></span></p>
+      <div class="space-y-2">
+        <input id="m-name" class="w-full border rounded-xl px-3 py-2" placeholder="Your Name"/>
+        <input id="m-phone" class="w-full border rounded-xl px-3 py-2" placeholder="Phone with country code (e.g., +91...)"/>
+        <input id="m-coupon" class="w-full border rounded-xl px-3 py-2" placeholder="Promo code (optional)"/>
+        <textarea id="m-notes" class="w-full border rounded-xl px-3 py-2" placeholder="Notes (optional)"></textarea>
+      </div>
+      <div class="flex flex-col sm:flex-row items-center gap-2 justify-end mt-3">
+        <button id="m-cancel" class="w-full sm:w-auto px-3 py-2 rounded-xl border">Cancel</button>
+        <button id="m-confirm" class="w-full sm:w-auto px-3 py-2 rounded-xl bg-emerald-600 text-white">Confirm</button>
+      </div>
+    </div>
   </div>
-</div>
 
-<!-- Inlined, mobile-friendly booking script (module) -->
-<script type="module">
-// Mobile-optimized app.js (inlined) — trimmed comments, focused on responsive behavior
-import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js';
-import { getFirestore, collection, query, where, getDocs, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js';
+  <!-- small helpers -->
+  <script>
+    // set date min/max and some link defaults
+    (function(){
+      const dateInput = document.getElementById('date');
+      if (dateInput) {
+        const today = new Date();
+        const pad = n => String(n).padStart(2,'0');
+        const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        dateInput.min = iso(today);
+        const maxDays = 90;
+        const maxDate = new Date(Date.now() + maxDays*24*60*60*1000);
+        dateInput.max = iso(maxDate);
+        dateInput.value = iso(today);
+      }
 
-const firebaseConfig = { apiKey: 'AIzaSyAXDvwYufUn5C_E_IYAdm094gSmyHOg46s', authDomain: 'gods-turf.firebaseapp.com', projectId: 'gods-turf', storageBucket: 'gods-turf.appspot.com', messagingSenderId: '46992157689', appId: '1:46992157689:web:b547bc847c7a0331bb2b28' };
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-const db = getFirestore(app);
+      const phone = "+917003396909";
+      const wa = document.getElementById("waLink");
+      const callH = document.getElementById("callLinkHeader");
+      const callF = document.getElementById("callLink");
+      if(wa) wa.href = `https://wa.me/${phone.replace(/\+/g,'')}`;
+      if(callH) callH.href = `tel:${phone}`;
+      if(callF) callF.href = `tel:${phone}`;
+      // default inbox email
+      const email = document.getElementById('emailLink');
+      if (email && !email.href) email.href = 'mailto:godsturf@gmail.com';
+    })();
 
-const $ = (s,el=document)=>el.querySelector(s);
-const $$ = (s,el=document)=>Array.from(el.querySelectorAll(s));
-function addTap(el,h){if(!el)return;el.addEventListener('click',h);el.addEventListener('touchstart',e=>{e.preventDefault();h(e);},{passive:false});}
-function toast(t){try{const n=document.createElement('div');n.textContent=t;n.style.position='fixed';n.style.right='12px';n.style.bottom='12px';n.style.padding='8px 12px';n.style.background='#ecfdf5';n.style.color='#064e3b';n.style.borderRadius='8px';n.style.zIndex=99999;document.body.appendChild(n);setTimeout(()=>n.remove(),3500);}catch(e){}
-}
+    // modal keyboard close on Escape + focus trap minimal
+    (function(){
+      const modal = document.getElementById('modal');
+      const closeBtn = document.getElementById('closeModal');
+      const cancelBtn = document.getElementById('m-cancel');
+      function hideModal(){ if(modal) modal.classList.add('hidden'); document.body.style.overflow = ''; }
+      if(closeBtn) closeBtn.addEventListener('click', hideModal);
+      if(cancelBtn) cancelBtn.addEventListener('click', hideModal);
+      document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && modal && !modal.classList.contains('hidden')) hideModal(); });
+    })();
+  </script>
 
-/* time helpers */
-const ALL_SLOTS = (()=>{const out=[];for(let h=0;h<24;h++){for(const m of [0,30]){const s=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');const ed=new Date(1970,0,1,h,m);ed.setMinutes(ed.getMinutes()+30);const e=String(ed.getHours()).padStart(2,'0')+':'+String(ed.getMinutes()).padStart(2,'0');out.push({id:`${s}-${e}`,start:s,end:e});}}return out;})();
-const slotIndexMap = ALL_SLOTS.reduce((a,s,i)=>(a[s.id]=i,a),{});
-const PRICE_BY_COURT={5A:750,5B:750,7A:1250,CRK:1250};
-const COURT_META={5A:{type:'half',label:'Half Ground Left'},5B:{type:'half',label:'Half Ground Right'},7A:{type:'full',label:'Full Ground'},CRK:{type:'cricket',label:'Full Ground (Cricket)'}};
-function normalizedKey(v){if(!v)return'';const s=String(v).trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(/5A/.test(s))return'5A';if(/5B/.test(s))return'5B';if(/7A/.test(s))return'7A';if(/CRK|CRICKET/.test(s))return'CRK';return s;}
-function metaFor(k){return COURT_META[normalizedKey(k)]||{type:'unknown',label:k||String(k)}}
-function expandBookingToSlots(range){if(!range)return[];const [start,end]=range.split('-');const sIdx=ALL_SLOTS.findIndex(x=>x.id.split('-')[0]===start);const eIdx=ALL_SLOTS.findIndex(x=>x.id.split('-')[1]===end);if(sIdx>=0&&eIdx>=sIdx){const out=[];for(let i=sIdx;i<=eIdx;i++)out.push(ALL_SLOTS[i].id);return out;}const sh=Number(start.split(':')[0]),sm=Number(start.split(':')[1]);const eh=Number(end.split(':')[0]),em=Number(end.split(':')[1]);const sT=sh*60+sm,eT=eh*60+em;const a=[];for(let t=sT;t<eT;t+=30){const H=Math.floor(t/60),M=t%60;const EH=Math.floor((t+30)/60),EM=(t+30)%60;a.push(`${String(H).padStart(2,'0')}:${String(M).padStart(2,'0')}-${String(EH).padStart(2,'0')}:${String(EM).padStart(2,'0')}`);}return a;}
+  <!-- main module script (replace with your ./scripts/app.js path) -->
+  <script type="module" src="./scripts/app.js"></script>
 
-function computeSlotOccupancy(bookings){const m={};ALL_SLOTS.forEach(s=>m[s.id]={halves:new Set(),full:false,cricket:false,bookings:[]});(bookings||[]).forEach(b=>{if(!b||!b.slotId) return;const raw=b.court||b.courtId||b.selectedCourt||'';const key=normalizedKey(raw);const meta=metaFor(key);const covered=expandBookingToSlots(b.slotId);covered.forEach(sid=>{if(!m[sid])m[sid]={halves:new Set(),full:false,cricket:false,bookings:[]};const cell=m[sid];cell.bookings.push({...b,court:key});if((b.status||'').toLowerCase()==='cancelled')return;if(meta.type==='half'){if(key)cell.halves.add(key);}else if(meta.type==='full'){cell.full=true;}else if(meta.type==='cricket'){cell.cricket=true};});});return m}
+  <!-- footer -->
+  <footer class="border-t mt-8">
+    <div class="max-w-6xl mx-auto px-4 py-6 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <span>© <span id="year"></span> GODs Turf</span>
+      <div class="space-x-4">
+        <a href="./terms.html" class="hover:text-emerald-600">Terms</a>
+        <a href="./privacy.html" class="hover:text-emerald-600">Privacy</a>
+      </div>
+    </div>
+  </footer>
 
-function makeRangeIdFromStartAndDuration(startSlotId,duration){const [start]=startSlotId.split('-');const [hh,mm]=start.split(':').map(Number);const dt=new Date(1970,0,1,hh,mm);dt.setMinutes(dt.getMinutes()+duration);const end=`${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;return `${start}-${end}`}
-function isRangeAvailableFor(occ,startSlotId,duration,targetCourt){if(!startSlotId||!targetCourt)return{allowed:false,reason:'Invalid'};const range=makeRangeIdFromStartAndDuration(startSlotId,duration);const slots=expandBookingToSlots(range);if(!slots.length)return{allowed:false,reason:'Invalid range'};const tmeta=metaFor(targetCourt);const tkey=normalizedKey(targetCourt);for(const sid of slots){const cell=occ[sid]||{halves:new Set(),full:false,cricket:false,bookings:[]};if(tmeta.type==='half'){if(cell.full) return {allowed:false,reason:`Full at ${sid}`};if(cell.cricket) return {allowed:false,reason:`Cricket at ${sid}`};if(cell.halves.size>=2) return {allowed:false,reason:`Both halves at ${sid}`};if(tkey && cell.halves.has(tkey)) return {allowed:false,reason:`Your half taken at ${sid}`}}else if(tmeta.type==='full'){if(cell.halves.size>0) return {allowed:false,reason:`Half booked at ${sid}`};if(cell.cricket) return {allowed:false,reason:`Cricket at ${sid}`};if(cell.full) return {allowed:false,reason:`Full at ${sid}`}}else if(tmeta.type==='cricket'){if(cell.halves.size>0) return {allowed:false,reason:`Halves at ${sid}`};if(cell.full) return {allowed:false,reason:`Full at ${sid}`};if(cell.cricket) return {allowed:false,reason:`Cricket at ${sid}`}}else{if(cell.bookings.length) return {allowed:false,reason:`Booked at ${sid}`}}}return{allowed:true,reason:null}}
-
-/* DOM refs */
-const dateInput = $('#date');const slotTabs = $('#slotTabs');const slotPanel = $('#slotPanel');const modal = $('#modal');const mTitle = $('#m-title');const mWhen = $('#m-when');const mPrice = $('#m-price');const mName = $('#m-name');const mPhone = $('#m-phone');const mConfirm = $('#m-confirm');const mCancel = $('#m-cancel');
-
-let selectedCourt = '5A';let selectedDate = dateInput?.value || new Date().toISOString().slice(0,10);let selectedAmount = PRICE_BY_COURT[selectedCourt];let selectedBucket='morning';let timelineSelection = new Set();
-
-if(dateInput && !dateInput.value) dateInput.value = selectedDate;
-
-async function fetchBookingsForDate(dateISO){try{const q=query(collection(db,'bookings'),where('date','==',dateISO));const snap=await getDocs(q);const docs=[];snap.forEach(d=>{const dd=d.data();dd._id=d.id;docs.push(dd)});return docs}catch(e){console.error(e);toast('Error fetching bookings');return[]}}
-async function fetchWishlistsFor(date,court){try{const q=query(collection(db,'wishlists'),where('date','==',date),where('court','==',normalizedKey(court)));const snap=await getDocs(q);const docs=[];snap.forEach(d=>{const dd=d.data();dd._id=d.id;docs.push(dd)});return docs}catch(e){console.error(e);return[]}}
-
-function bucketSlots(slots){const out={midnight:[],morning:[],afternoon:[],evening:[]};slots.forEach(s=>{const h=Number(s.start.split(':')[0]);if(h<6)out.midnight.push(s);else if(h<12)out.morning.push(s);else if(h<18)out.afternoon.push(s);else out.evening.push(s)});return out}
-
-/* render helpers: mobile-friendly sizes */
-function to12(hhmm){const [hh,mm]=hhmm.split(':').map(Number);const p=hh>=12?'PM':'AM';let H=hh%12;if(H===0)H=12;return `${H}:${String(mm).padStart(2,'0')} ${p}`}
-
-function renderSlots(){selectedDate = dateInput?.value || selectedDate;return (async ()=>{
-  const [bookings,wishes] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate,selectedCourt)]);
-  const occ = computeSlotOccupancy(bookings);
-  window.__GODsTurf = window.__GODsTurf||{};window.__GODsTurf.occupancyMap = occ;
-
-  const buckets = bucketSlots(ALL_SLOTS);
-  const bucketInfo = {};
-  Object.entries(buckets).forEach(([k,items])=>{const total=items.length;let available=0;items.forEach(s=>{const ok=isRangeAvailableFor(occ,s.id,60,selectedCourt).allowed;if(ok)available++});bucketInfo[k]={total,available}});
-
-  // tabs
-  slotTabs.innerHTML='';['midnight','morning','afternoon','evening'].forEach(key=>{const btn=document.createElement('button');btn.className='px-3 py-2 rounded-full border text-sm bg-white';btn.textContent=(key.charAt(0).toUpperCase()+key.slice(1)) + ` (${bucketInfo[key].available}/${bucketInfo[key].total})`;btn.addEventListener('click',()=>{selectedBucket=key;timelineSelection=new Set();renderSlots()});slotTabs.appendChild(btn)});
-
-  slotPanel.innerHTML='';const wrap=document.createElement('div');wrap.className='p-1 border rounded-lg bg-white';const title=document.createElement('div');title.className='mb-2 font-semibold';title.textContent={midnight:'Midnight',morning:'Morning',afternoon:'Afternoon',evening:'Evening'}[selectedBucket]+' (30-min ticks)';wrap.appendChild(title);
-
-  const container=document.createElement('div');container.className='timeline-container';const grid=document.createElement('div');grid.className='timeline-grid';
-
-  buckets[selectedBucket].forEach(slot=>{
-    const btn=document.createElement('button');btn.className='slot-btn';btn.setAttribute('data-slot-id',slot.id);
-    const past = (()=>{const [s]=slot.id.split('-');const [H,M]=s.split(':').map(Number);const sd=new Date(selectedDate+'T00:00:00');sd.setHours(H,M);return sd.getTime()<=Date.now();})();
-    const cell=occ[slot.id]||{halves:new Set(),full:false,cricket:false};
-    let state='available';if(past)state='past';else if(cell.full||cell.cricket)state='blocked';else if(cell.halves.size>=1)state='partial';
-    if(state==='past'){btn.classList.add('slot-past');btn.disabled=true} else if(state==='blocked'){btn.classList.add('slot-blocked');btn.disabled=true} else if(state==='partial'){btn.classList.add('slot-partial')} else {btn.classList.add('bg-white')}
-
-    const t=document.createElement('div');t.style.fontSize='11px';t.textContent=to12(slot.start);
-    const ssub=document.createElement('div');ssub.style.fontSize='10px';ssub.style.opacity=.6;ssub.textContent=slot.start;
-    btn.appendChild(t);btn.appendChild(ssub);
-
-    addTap(btn,()=>{
-      if(btn.disabled){ if(state==='blocked'){ openWishlist(slot);} return; }
-      const sid=slot.id; if(timelineSelection.has(sid))timelineSelection.delete(sid);else timelineSelection.add(sid);normalizeSelection();refreshGridButtons(grid);renderSummary(grid);
-    });
-
-    grid.appendChild(btn);
-  });
-
-  container.appendChild(grid);wrap.appendChild(container);slotPanel.appendChild(wrap);
-  renderSummary(grid);
-
-  function refreshGridButtons(g){g.querySelectorAll('button[data-slot-id]').forEach(b=>{const id=b.getAttribute('data-slot-id');if(timelineSelection.has(id)){b.classList.remove('bg-white','slot-partial');b.classList.add('slot-selected')}else{b.classList.remove('slot-selected');}})}
-  function renderSummary(gridEl){let summary=gridEl.parentElement.querySelector('.timeline-summary');if(!summary){summary=document.createElement('div');summary.className='timeline-summary mt-3 p-3 border rounded-lg bg-white';gridEl.parentElement.appendChild(summary);}summary.innerHTML='';if(!timelineSelection.size){summary.innerHTML='Tap ticks to pick start/end. Minimum 60 mins.';return;}const indices=Array.from(timelineSelection).map(id=>slotIndexMap[id]).sort((a,b)=>a-b);const min=indices[0],max=indices[indices.length-1];const start=ALL_SLOTS[min].start,end=ALL_SLOTS[max].end;const dur=(max-min+1)*30;const price=Math.round(selectedAmount*(dur/60));summary.innerHTML=`<div><strong>${to12(start)} — ${to12(end)}</strong> · ${dur} mins · ₹${price}</div>`;const actions=document.createElement('div');actions.className='mt-2 flex gap-2 justify-end';const book=document.createElement('button');book.className='px-3 py-2 rounded-xl bg-emerald-600 text-white';if(dur<60){book.textContent='Min 60 mins';book.disabled=true}else{book.textContent='Book';book.addEventListener('click',()=>openBooking(ALL_SLOTS[min],dur))}const clear=document.createElement('button');clear.className='px-3 py-2 rounded-xl border';clear.textContent='Clear';clear.addEventListener('click',()=>{timelineSelection=new Set();refreshGridButtons(grid);renderSummary(grid)});actions.appendChild(clear);actions.appendChild(book);summary.appendChild(actions)}
-
-})();}
-
-function normalizeSelection(){if(!timelineSelection.size)return;const idx=Array.from(timelineSelection).map(id=>slotIndexMap[id]).filter(i=>i!==undefined).sort((a,b)=>a-b);const min=idx[0],max=idx[idx.length-1];timelineSelection=new Set();for(let i=min;i<=max;i++)timelineSelection.add(ALL_SLOTS[i].id)}
-
-function openBooking(startSlot,duration){modal.classList.remove('hidden');mWhen.textContent=`${startSlot.start} — ${makeRangeIdFromStartAndDuration(startSlot.id,duration).split('-')[1]}`;mPrice.textContent=`₹${Math.round(selectedAmount*(duration/60))}`;modal.dataset.startSlot=startSlot.id;modal.dataset.duration=String(duration);}
-function openWishlist(slot){modal.classList.remove('hidden');mWhen.textContent=slot.start;modal.dataset.startSlot=slot.id;modal.dataset.duration='30'}
-
-// booking confirm
-mConfirm?.addEventListener('click',async ()=>{const name=document.getElementById('m-name').value||'';const phone=document.getElementById('m-phone').value||'';if(name.length<2){toast('Enter name');return}if(!/\+?\d{8,15}/.test(phone)){toast('Enter phone');return}const startSlot=modal.dataset.startSlot;const duration=Number(modal.dataset.duration||60);const range=makeRangeIdFromStartAndDuration(startSlot,duration);const booking={userName:name,phone,court:selectedCourt,slotId:range,slotLabel:range,date:dateInput.value,amount:Math.round(selectedAmount*(duration/60)),durationMins:duration,status:'pending',createdAt:serverTimestamp()};try{mConfirm.disabled=true;await addDoc(collection(db,'bookings'),booking);toast('Booked');modal.classList.add('hidden');renderSlots()}catch(e){console.error(e);toast('Booking failed')}finally{mConfirm.disabled=false}})
-
-// pitch selector init (mobile friendly)
-function initPitchSelector(){const container=document.getElementById('pitchSelectorContainer');if(!container)return;container.innerHTML=`<div class="rounded-2xl shadow-md p-3 bg-white"><div class="mb-3"><div class="space-y-2 md:space-y-0 md:flex md:gap-2"><button data-pitch="half-left" class="pitch-btn">Half (left)</button><button data-pitch="half-right" class="pitch-btn">Half (right)</button><button data-pitch="full" class="pitch-btn">Full</button><button data-pitch="full-cricket" class="pitch-btn">Full (Cricket)</button></div></div><div class="flex items-center gap-3"><div class="flex-1"><svg viewBox="0 0 1200 800" class="w-full" style="height:160px"><rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="#2aa02a"/></svg></div><div class="w-36 hidden sm:block"><img id="pitchPreviewImg" src="./assets/turf_left.jpg" class="w-full h-24 object-cover rounded"/></div></div></div>`;
-  $$('.pitch-btn',container).forEach(b=>addTap(b,ev=>{const p=ev.currentTarget.getAttribute('data-pitch');if(p==='half-left'){selectedCourt='5A'}else if(p==='half-right'){selectedCourt='5B'}else if(p==='full'){selectedCourt='7A'}else if(p==='full-cricket'){selectedCourt='CRK'};selectedAmount=PRICE_BY_COURT[selectedCourt];window.__GODsTurf.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label,selectedAmount);renderSlots()}));
-}
-
-// init
-window.addEventListener('load',()=>{initPitchSelector();try{renderSlots()}catch(e){console.error(e)}});
-
-// expose for debugging
-window.__GODsTurf=window.__GODsTurf||{};window.__GODsTurf.updateSelectedUI=(label,price)=>{const s=document.getElementById('selectedPitch');const p=document.getElementById('selectedPrice');if(s)s.textContent=label; if(p)p.textContent= price? `₹${price}`:'—'};
-
-</script>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 </body>
 </html>
