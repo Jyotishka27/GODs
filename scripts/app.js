@@ -75,7 +75,9 @@ function fmtDateISO(d) {
 }
 function to12(t24) {
   const [hh, mm] = t24.split(":").map(Number);
-  const period = hh >= 12 ? "PM" : "AM";
+  // Use lowercase am/pm and show midnight as 00:MM am (user requested "00:00 am")
+  const period = hh >= 12 ? "pm" : "am";
+  if (hh === 0) return `00:${String(mm).padStart(2, "0")} ${period}`; // midnight -> 00:00 am
   let hour = hh % 12;
   if (hour === 0) hour = 12;
   return `${hour}:${String(mm).padStart(2, "0")} ${period}`;
@@ -514,7 +516,7 @@ function validateModalFields() {
   clearFieldErrors();
   const name = mName?.value?.trim() || "";
   const phone = mPhone?.value?.trim() || "";
-  if (name.length < 2) { showFieldError(mName, "Please enter your full name (min 2 characters)."); return { ok: false, reason: "name" }; }
+  if (name.length < 2) { showFieldError(mName, "Please enter your full name (min 2 characters).); return { ok: false, reason: "name" }; }
   if (!/^\+?\d{8,15}$/.test(phone)) { showFieldError(mPhone, "Enter a valid phone with country code, e.g. +91..."); return { ok: false, reason: "phone" }; }
   return { ok: true, name, phone };
 }
