@@ -1,4 +1,4 @@
-// scripts/app.js (drop-in replacement)
+// scripts/app.js (mobile-friendly drop-in replacement)
 // Booking + Wishlist front-end using Firestore (no auth)
 // - Slot buckets, pitch selector, pending/confirmed status display
 // - Book button on right, status pill centered, wishlist on right
@@ -55,6 +55,17 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
+/* tiny helper: attach tap-friendly handlers (click + touchstart) */
+function addTap(el, handler) {
+  if (!el) return;
+  el.addEventListener('click', handler);
+  el.addEventListener('touchstart', function touchHandler(e){
+    // prevent double-firing / ghost clicks on some devices
+    e.preventDefault();
+    handler(e);
+  }, { passive: false });
+}
+
 /* ---------- date/label helpers ---------- */
 function fmtDateISO(d) {
   const y = d.getFullYear();
@@ -107,26 +118,17 @@ const COURT_META = {
 
 /* ---------- NORMALIZATION (robust) ---------- */
 function normalizedKey(val) {
-  // Defensive normalization: handle many common string forms and map to canonical keys.
   if (val === undefined || val === null) return "";
   let v = String(val).trim();
-
-  // remove whitespace and stray punctuation
   const compact = v.replace(/[\s_\-]+/g, "").toUpperCase();
-
-  // direct canonical matches
   if (/^5A$/.test(compact)) return "5A";
   if (/^5B$/.test(compact)) return "5B";
   if (/^7A$/.test(compact)) return "7A";
   if (/^CRK$/.test(compact)) return "CRK";
-
-  // textual heuristics
   if (/HALF.*LEFT|LEFTHALF|^LEFT$|HALFLEFT|LEFT/i.test(v)) return "5A";
   if (/HALF.*RIGHT|RIGHTHALF|^RIGHT$|HALFRIGHT|RIGHT/i.test(v)) return "5B";
   if (/FULL.*CRICKET|CRICKET|FULLCRICKET/i.test(v)) return "CRK";
   if (/FULL|WHOLE|ENTIRE|FULLGROUND|FULL_GROUND|^7A$/i.test(v)) return "7A";
-
-  // fallback: strip to uppercase alphanumeric
   const fallback = compact.replace(/[^A-Z0-9]/g, "");
   return fallback;
 }
@@ -336,7 +338,7 @@ async function renderSlots() {
     bucketInfo[key] = { total, available };
   });
 
-  // render tabs (equal-width buttons)
+  // render tabs (equal-width buttons) - with smaller minWidth for phones
   slotTabs.innerHTML = "";
   const tabOrder = [
     { key: "midnight", title: "Midnight (12:00 AM–6:00 AM)" },
@@ -345,18 +347,13 @@ async function renderSlots() {
     { key: "evening", title: "Evening (6:00 PM–12:00 AM)" }
   ];
 
-  // container: full width, allow wrapping on tiny screens
   const tabsWrap = document.createElement("div");
   tabsWrap.className = "w-full flex gap-2 flex-wrap";
 
   tabOrder.forEach(t => {
     const isActive = (t.key === selectedBucket);
-
-    // each button is a flex child that grows equally
     const btn = document.createElement("button");
     btn.setAttribute("data-bucket", t.key);
-
-    // use flex layout inside the button so the title and badge align nicely
     btn.className = [
       "flex",
       "items-center",
@@ -369,21 +366,16 @@ async function renderSlots() {
       "border",
       isActive ? "bg-emerald-600 text-white" : "bg-white",
     ].join(" ");
-
-    // ensure equal widths
-    btn.style.flex = "1 1 0";      // grow, shrink, basis 0 -> equal widths
-    btn.style.minWidth = "160px";  // prevents awkward wrapping of long labels on small screens
-
-    // content: label + small availability badge
+    // responsive equal widths: smaller min width helps phones
+    btn.style.flex = "1 1 0";
+    btn.style.minWidth = "120px"; // reduced from 160 to fit narrow screens better
     const badgeClass = isActive ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700";
     btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${badgeClass} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
-
-    btn.addEventListener("click", () => { selectedBucket = t.key; renderSlots(); });
+    addTap(btn, () => { selectedBucket = t.key; renderSlots(); });
     tabsWrap.appendChild(btn);
   });
 
   slotTabs.appendChild(tabsWrap);
-
 
   // render selected bucket
   slotPanel.innerHTML = "";
@@ -418,9 +410,9 @@ async function renderSlots() {
   list.className = "space-y-2";
 
   selectedItems.forEach(s => {
-    // left (time), middle (status), right (book + wishlist)
+    // item becomes column on small screens and row on larger screens
     const item = document.createElement("div");
-    item.className = "flex items-center justify-between p-2 border rounded-xl bg-white";
+    item.className = "flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 border rounded-xl bg-white gap-3";
 
     const left = document.createElement("div");
     left.className = "flex-0";
@@ -430,7 +422,7 @@ async function renderSlots() {
     middle.className = "flex-1 text-center";
 
     const right = document.createElement("div");
-    right.className = "flex items-center gap-2";
+    right.className = "flex flex-col sm:flex-row items-stretch sm:items-center gap-2";
 
     const avail = isSlotAvailableFor(occupancy, s.id, selectedCourt);
 
@@ -455,10 +447,10 @@ async function renderSlots() {
       }
 
       const wishBtn = document.createElement("button");
-      wishBtn.className = "px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+      wishBtn.className = "px-3 py-2 text-sm rounded-xl border hover:bg-gray-50 w-full sm:w-auto text-center";
       wishBtn.textContent = "Wishlist";
       wishBtn.title = "Add yourself to wishlist for this slot";
-      wishBtn.addEventListener("click", () => {
+      addTap(wishBtn, () => {
         const occBooking = (occupancy[s.id] && occupancy[s.id].bookings && occupancy[s.id].bookings[0]) || null;
         preferredBookingId = occBooking?._id ?? null;
         openWishlistModal(s, preferredBookingId);
@@ -468,24 +460,24 @@ async function renderSlots() {
     } else {
       // available: right contains Book button and wishlist badge (if any)
       const bookBtn = document.createElement("button");
-      bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700";
+      bookBtn.className = "px-3 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 w-full sm:w-auto";
       bookBtn.textContent = "Book";
-      bookBtn.addEventListener("click", () => openBookingModal(s));
+      addTap(bookBtn, () => openBookingModal(s));
       right.appendChild(bookBtn);
 
       const count = (wishlistMap[s.id] || []).length;
       if (count > 0) {
         const badge = document.createElement("span");
-        badge.className = "px-2 py-1 rounded-full text-xs border bg-white";
+        badge.className = "px-2 py-1 rounded-full text-xs border bg-white text-center";
         badge.textContent = `Wishlist · ${count}`;
         right.appendChild(badge);
       } else {
         // allow user to join wishlist even when none exist yet
         const wishBtn = document.createElement("button");
-        wishBtn.className = "px-2 py-1 text-sm rounded-full border hover:bg-gray-50";
+        wishBtn.className = "px-3 py-2 text-sm rounded-xl border hover:bg-gray-50 w-full sm:w-auto";
         wishBtn.textContent = "Wishlist";
         wishBtn.title = "Add yourself to wishlist for this slot";
-        wishBtn.addEventListener("click", () => {
+        addTap(wishBtn, () => {
           preferredBookingId = null;
           openWishlistModal(s, null);
         });
@@ -527,6 +519,9 @@ function validateModalFields() {
   return { ok: true, name, phone };
 }
 
+function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
+function unlockBodyScroll() { document.body.style.overflow = ''; }
+
 function openBookingModal(slot) {
   modalMode = "booking";
   selectedSlot = slot;
@@ -552,8 +547,8 @@ function openWishlistModal(slot, prefBookingId = null) {
   openModal();
   setTimeout(()=> { mName?.focus(); }, 120);
 }
-function openModal() { modal?.classList.remove("hidden"); }
-function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); }
+function openModal() { modal?.classList.remove("hidden"); lockBodyScroll(); }
+function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); unlockBodyScroll(); }
 function resetModalFields() {
   if (mName) mName.value = "";
   if (mPhone) mPhone.value = "";
@@ -694,6 +689,7 @@ function initPitchSelector() {
     return { setSelected: (k)=>{} };
   }
 
+  // Use uploaded gallery preview path (platform converts the local path to a URL)
   const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
 
   container.innerHTML = `
@@ -811,14 +807,14 @@ function initPitchSelector() {
   const areaLeft = container.querySelector("#area-left");
   const areaRight = container.querySelector("#area-right");
 
-  areaFull?.addEventListener("click", ()=> setSelectedByPitch("full"));
-  areaCricket?.addEventListener("click", ()=> setSelectedByPitch("full-cricket"));
-  areaLeft?.addEventListener("click", ()=> setSelectedByPitch("half-left"));
-  areaRight?.addEventListener("click", ()=> setSelectedByPitch("half-right"));
+  addTap(areaFull, ()=> setSelectedByPitch("full"));
+  addTap(areaCricket, ()=> setSelectedByPitch("full-cricket"));
+  addTap(areaLeft, ()=> setSelectedByPitch("half-left"));
+  addTap(areaRight, ()=> setSelectedByPitch("half-right"));
 
   $$(".pitch-btn", container).forEach(b => {
-    b.addEventListener("click", (ev) => {
-      const p = ev.currentTarget.getAttribute("data-pitch");
+    addTap(b, (ev) => {
+      const p = ev.currentTarget?.getAttribute("data-pitch");
       setSelectedByPitch(p);
     });
   });
