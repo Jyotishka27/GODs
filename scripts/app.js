@@ -110,8 +110,8 @@ const ALL_SLOTS = generateSlots();
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 
 const COURT_META = {
-  "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
-  "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
+  "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
+  "5B": { type: "half", label: "Half Ground Right", dims: "55×90" },
   "7A": { type: "full", label: "Full Ground", dims: "110×90" },
   "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
@@ -136,8 +136,8 @@ function normalizedKey(val) {
 function metaFor(courtId) {
   const key = normalizedKey(courtId);
   if (COURT_META[key]) return COURT_META[key];
-  if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground A", dims: "55×90" };
-  if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground B", dims: "55×90" };
+  if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground Left", dims: "55×90" };
+  if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground Right", dims: "55×90" };
   if (/7A|FULL/.test(key)) return { type: "full", label: "Full Ground", dims: "110×90" };
   if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" };
   return { type: "unknown", label: key || String(courtId), dims: "" };
