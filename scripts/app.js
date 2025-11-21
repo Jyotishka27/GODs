@@ -1,3 +1,4 @@
+
 // scripts/app.js (timeline multi-select, 30-min ticks, min 60 min booking)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
@@ -672,20 +673,16 @@ async function renderSlots() {
     return;
   }
 
-  // timeline container
-  const { container, grid } = createTimelineElement();
-  // limit grid to only show ticks for this bucket in order
-  // create a temporary grid that contains only the bucket items
+  // timeline container (simple: append bucketGrid directly to container)
+  const { container } = createTimelineElement();
   const bucketGrid = document.createElement("div");
   bucketGrid.className = "inline-grid gap-1";
   bucketGrid.style.gridAutoFlow = "column";
   bucketGrid.style.gridAutoColumns = "min-content";
   bucketGrid.style.alignItems = "center";
   bucketGrid.style.width = "100%";
-  // copy relevant slots into a lightweight structure and render using renderTimeline-like method
-  // We'll reuse renderTimeline but provide a temporary occupancy map for those slots (occupancy is global though)
-  grid.appendChild(bucketGrid);
-  // render buttons into bucketGrid instead of global grid element
+
+  // build buttons into bucketGrid (same as before)
   bucketItems.forEach(slot => {
     const btn = document.createElement("button");
     btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
@@ -772,9 +769,9 @@ async function renderSlots() {
     bucketGrid.appendChild(btn);
   });
 
-  container.querySelector("div")?.remove?.(); // no-op safe
+  // attach to container and panel (straightforward)
+  container.appendChild(bucketGrid);
   slotPanel.appendChild(container);
-  container.firstChild.replaceWith(bucketGrid); // place bucketGrid in container
 
   // initial empty summary
   renderSelectionSummary(bucketGrid);
@@ -861,7 +858,7 @@ function validateModalFields() {
   const phone = mPhone?.value?.trim() || "";
   if (name.length < 2) return { ok:false, reason:"name" };
   if (!/^\+?\d{8,15}$/.test(phone)) return { ok:false, reason:"phone" };
-  // duration only read from modal dataset (we validate below before booking)
+  // duration only read from modal.dataset (we validate below before booking)
   return { ok:true, name, phone };
 }
 
