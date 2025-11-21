@@ -468,235 +468,225 @@ function renderSelectionSummary(gridEl, occupancyMap) {
   summary.appendChild(actions);
 }
 
-/* ---------- render slots wrapper ---------- */
+/* ---------- render slots wrapper (patched with debug & safe placeholder) ---------- */
 async function renderSlots() {
-  if (!slotPanel || !slotTabs) {
-    console.warn('renderSlots: slotPanel or slotTabs missing. Aborting render.');
-    return;
-  }
-  selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
-
-  if (!selectedCourt) {
-    selectedCourt = '5A';
-    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
-  }
-
-  let bookingsAll = [], wishlists = [];
   try {
-    [bookingsAll, wishlists] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate, selectedCourt)]);
-  } catch (e) {
-    console.error("fetch error", e);
-    toast("Error fetching bookings/wishlists.", { error: true });
-  }
+    if (!slotPanel || !slotTabs) {
+      console.warn('renderSlots: slotPanel or slotTabs missing. Aborting render.');
+      return;
+    }
+    selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
+    console.debug('renderSlots START -> selectedDate:', selectedDate, 'selectedBucket:', selectedBucket, 'selectedCourt:', selectedCourt);
 
-  // occupancy map per 30-min slot
-  const occupancy = computeSlotOccupancy(bookingsAll);
-  // store occupancy globally for helper usage
-  window.__GODsTurf = window.__GODsTurf || {};
-  window.__GODsTurf.occupancyMap = occupancy;
-
-  // wishlist map (by 30-min slot id)
-  const wishlistMap = (wishlists || []).reduce((acc, w) => {
-    if (!w || !w.slotId) return acc;
-    const covered = expandBookingToSlots(w.slotId);
-    covered.forEach(sid => {
-      if (!acc[sid]) acc[sid] = [];
-      acc[sid].push(w);
-    });
-    return acc;
-  }, {});
-
-  const buckets = bucketSlots(ALL_SLOTS);
-  // compute available starts (min 60)
-  const bucketInfo = {};
-  Object.entries(buckets).forEach(([k, items])=>{
-    const total = items.length;
-    let available = 0;
-    items.forEach(s => {
-      const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
-      if (ok && !isSlotInPast(s.id, selectedDate)) available++;
-    });
-    bucketInfo[k] = { total, available };
-  });
-
-  // build tabs
-  slotTabs.innerHTML = "";
-  const tabOrder = [
-    { key: "midnight", title: "Midnight (00:00–06:00)" },
-    { key: "morning", title: "Morning (06:00–12:00)" },
-    { key: "afternoon", title: "Afternoon (12:00–18:00)" },
-    { key: "evening", title: "Evening (18:00–00:00)" }
-  ];
-  const tabsWrap = document.createElement("div");
-  tabsWrap.className = "w-full flex gap-2 flex-wrap";
-  tabOrder.forEach(t=>{
-    const isActive = (t.key === selectedBucket);
-    const btn = document.createElement("button");
-    btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "bg-emerald-600 text-white":"bg-white"].join(" ");
-    btn.style.flex = "1 1 0";
-    btn.style.minWidth = "120px";
-    btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
-    addTap(btn, ()=> { selectedBucket = t.key; timelineSelection = new Set(); renderSlots(); });
-    tabsWrap.appendChild(btn);
-  });
-  slotTabs.appendChild(tabsWrap);
-
-  // Render timeline for the selected bucket
-  slotPanel.innerHTML = "";
-  const bucketItems = buckets[selectedBucket] || [];
-  const header = document.createElement("div");
-  header.className = "mb-3 flex items-center justify-between";
-  const title = document.createElement("h4");
-  title.className = "font-semibold";
-  const titleMap = { midnight: "Midnight (00:00–06:00)", morning: "Morning (06:00–12:00)", afternoon: "Afternoon (12:00–18:00)", evening: "Evening (18:00–00:00)" };
-  title.textContent = titleMap[selectedBucket] || "Slots";
-  header.appendChild(title);
-  const summary = document.createElement("div");
-  summary.className = "text-sm text-gray-500";
-  summary.textContent = `Showing ${bucketInfo[selectedBucket].available} available / ${bucketInfo[selectedBucket].total} total`;
-  header.appendChild(summary);
-  slotPanel.appendChild(header);
-
-  if (!bucketItems.length) {
-    const emp = document.createElement("div");
-    emp.className = "text-sm text-gray-500";
-    emp.textContent = "No slots in this period.";
-    slotPanel.appendChild(emp);
-    return;
-  }
-
-  // timeline container
-  const { container } = createTimelineElement();
-  const bucketGrid = document.createElement("div");
-  bucketGrid.className = "timeline-grid";
-
-  // render buttons into bucketGrid
-  bucketItems.forEach(slot => {
-    const btn = document.createElement("button");
-    btn.className = "slot-btn";
-    btn.setAttribute("data-slot-id", slot.id);
-    btn.style.minWidth = "64px";
-    btn.style.display = "inline-flex";
-    btn.style.flexDirection = "column";
-    btn.style.alignItems = "center";
-    btn.style.justifyContent = "center";
-    btn.style.gap = "4px";
-
-    // Make slot buttons easier to tap on small phones
-    if (window.innerWidth <= 420) {
-      btn.style.minWidth = '72px';
-      btn.style.height = '48px';
-      btn.style.padding = '6px 10px';
-      btn.classList.add('slot-btn-mobile');
-    } else if (window.innerWidth <= 768) {
-      btn.style.minWidth = '56px';
-      btn.style.height = '40px';
-    } else {
-      btn.style.minWidth = '40px';
-      btn.style.height = '36px';
+    if (!selectedCourt) {
+      selectedCourt = '5A';
+      selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+      try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
     }
 
-    const past = isSlotInPast(slot.id, selectedDate);
-    const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
+    let bookingsAll = [], wishlists = [];
+    try {
+      [bookingsAll, wishlists] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate, selectedCourt)]);
+    } catch (e) {
+      console.error("renderSlots: fetch error", e);
+      toast("Error fetching bookings/wishlists.", { error: true });
+    }
 
-    // CONSISTENT state logic
-    let state = "available";
-    if (past) {
-      state = "past";
+    const occupancy = computeSlotOccupancy(bookingsAll || []);
+    window.__GODsTurf = window.__GODsTurf || {};
+    window.__GODsTurf.occupancyMap = occupancy;
+
+    const buckets = bucketSlots(ALL_SLOTS);
+    const bucketInfo = {};
+    Object.entries(buckets).forEach(([k, items])=>{
+      const total = items.length;
+      let available = 0;
+      items.forEach(s => {
+        const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
+        if (ok && !isSlotInPast(s.id, selectedDate)) available++;
+      });
+      bucketInfo[k] = { total, available };
+    });
+
+    // build tabs
+    slotTabs.innerHTML = "";
+    const tabOrder = [
+      { key: "midnight", title: "Midnight (00:00–06:00)" },
+      { key: "morning", title: "Morning (06:00–12:00)" },
+      { key: "afternoon", title: "Afternoon (12:00–18:00)" },
+      { key: "evening", title: "Evening (18:00–00:00)" }
+    ];
+    const tabsWrap = document.createElement("div");
+    tabsWrap.className = "w-full flex gap-2 flex-wrap";
+    tabOrder.forEach(t=>{
+      const isActive = (t.key === selectedBucket);
+      const btn = document.createElement("button");
+      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "bg-emerald-600 text-white":"bg-white"].join(" ");
+      btn.style.flex = "1 1 0";
+      btn.style.minWidth = "120px";
+      btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
+      addTap(btn, ()=> { selectedBucket = t.key; timelineSelection = new Set(); renderSlots(); });
+      tabsWrap.appendChild(btn);
+    });
+    slotTabs.appendChild(tabsWrap);
+
+    // Render timeline for the selected bucket
+    slotPanel.innerHTML = "";
+    const bucketItems = buckets[selectedBucket] || [];
+    console.debug('renderSlots -> bucketItems.length =', bucketItems.length, 'for bucket', selectedBucket);
+
+    const header = document.createElement("div");
+    header.className = "mb-3 flex items-center justify-between";
+    const title = document.createElement("h4");
+    title.className = "font-semibold";
+    const titleMap = { midnight: "Midnight (00:00–06:00)", morning: "Morning (06:00–12:00)", afternoon: "Afternoon (12:00–18:00)", evening: "Evening (18:00–00:00)" };
+    title.textContent = titleMap[selectedBucket] || "Slots";
+    header.appendChild(title);
+    const summary = document.createElement("div");
+    summary.className = "text-sm text-gray-500";
+    summary.textContent = `Showing ${bucketInfo[selectedBucket].available} available / ${bucketInfo[selectedBucket].total} total`;
+    header.appendChild(summary);
+    slotPanel.appendChild(header);
+
+    // always create timeline container so CSS doesn't collapse it
+    const { container } = createTimelineElement();
+    const bucketGrid = document.createElement("div");
+    bucketGrid.className = "timeline-grid";
+    container.appendChild(bucketGrid);
+    slotPanel.appendChild(container);
+
+    if (!bucketItems.length) {
+      console.info('renderSlots: no bucketItems, inserting placeholder.');
+      container.classList.add('empty');
+      const msg = document.createElement("div");
+      msg.className = "text-sm text-gray-600 p-4";
+      msg.textContent = "No slots in this period.";
+      bucketGrid.appendChild(msg);
+      return;
     } else {
-      if (occ.full || occ.cricket) {
-        state = "blocked";
-      } else if (occ.halves && occ.halves.size >= 1) {
-        state = "partial";
+      container.classList.remove('empty');
+    }
+
+    // render each slot (use the same detailed code you already had)
+    bucketItems.forEach(slot => {
+      const btn = document.createElement("button");
+      btn.className = "slot-btn";
+      btn.setAttribute("data-slot-id", slot.id);
+      btn.style.minWidth = "64px";
+      btn.style.display = "inline-flex";
+      btn.style.flexDirection = "column";
+      btn.style.alignItems = "center";
+      btn.style.justifyContent = "center";
+      btn.style.gap = "4px";
+
+      if (window.innerWidth <= 420) {
+        btn.style.minWidth = '72px';
+        btn.style.height = '48px';
+        btn.style.padding = '6px 10px';
+        btn.classList.add('slot-btn-mobile');
+      } else if (window.innerWidth <= 768) {
+        btn.style.minWidth = '56px';
+        btn.style.height = '40px';
       } else {
-        state = "available";
+        btn.style.minWidth = '40px';
+        btn.style.height = '36px';
       }
-    }
 
-    if (state === "past") {
-      btn.classList.add("slot-past");
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled","true");
-    } else if (state === "blocked") {
-      btn.classList.add("slot-blocked");
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled","true");
-    } else if (state === "partial") {
-      btn.classList.add("slot-partial");
-      btn.disabled = false;
-      btn.setAttribute("aria-disabled","false");
-    } else {
-      btn.classList.add("bg-white");
-      btn.disabled = false;
-      btn.setAttribute("aria-disabled","false");
-    }
+      const past = isSlotInPast(slot.id, selectedDate);
+      const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
-    const timeLabel = document.createElement("div");
-    timeLabel.textContent = to12FromHHMM(slot.start);
-    timeLabel.style.fontSize = "11px";
-    timeLabel.style.opacity = "0.95";
-    const sub = document.createElement("div");
-    sub.textContent = slot.label.split("-")[0];
-    sub.style.fontSize = "10px";
-    sub.style.opacity = "0.6";
-    btn.appendChild(timeLabel);
-    btn.appendChild(sub);
-
-    addTap(btn, (e) => {
-      // e.preventDefault called inside addTap for touch devices; guard here for click path
-      if (!e.defaultPrevented && e.type === 'click') e.preventDefault && e.preventDefault();
-
-      if (btn.disabled) {
-        if (state === "blocked") {
-          openWishlistModal(slot, null);
-        }
-        return;
-      }
-      const sid = slot.id;
-      if (timelineSelection.has(sid)) timelineSelection.delete(sid);
-      else timelineSelection.add(sid);
-      normalizeSelectionToContiguous();
-
-      // refresh visuals for this bucket
-      const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
-      allButtons.forEach(b => {
-        const id = b.getAttribute("data-slot-id");
-        if (timelineSelection.has(id)) {
-          b.classList.remove("bg-white","slot-partial");
-          b.classList.add("slot-selected");
-          b.setAttribute("aria-pressed","true");
+      let state = "available";
+      if (past) {
+        state = "past";
+      } else {
+        if (occ.full || occ.cricket) {
+          state = "blocked";
+        } else if (occ.halves && occ.halves.size >= 1) {
+          state = "partial";
         } else {
-          b.setAttribute("aria-pressed","false");
-          if (b.disabled) {
-            // keep disabled look
-          } else {
-            b.classList.remove("slot-selected");
-            b.classList.add("bg-white");
-          }
+          state = "available";
         }
+      }
+
+      if (state === "past") {
+        btn.classList.add("slot-past");
+        btn.disabled = true;
+        btn.setAttribute("aria-disabled","true");
+      } else if (state === "blocked") {
+        btn.classList.add("slot-blocked");
+        btn.disabled = true;
+        btn.setAttribute("aria-disabled","true");
+      } else if (state === "partial") {
+        btn.classList.add("slot-partial");
+        btn.disabled = false;
+        btn.setAttribute("aria-disabled","false");
+      } else {
+        btn.classList.add("bg-white");
+        btn.disabled = false;
+        btn.setAttribute("aria-disabled","false");
+      }
+
+      const timeLabel = document.createElement("div");
+      timeLabel.textContent = to12FromHHMM(slot.start);
+      timeLabel.style.fontSize = "11px";
+      timeLabel.style.opacity = "0.95";
+      const sub = document.createElement("div");
+      sub.textContent = slot.label.split("-")[0];
+      sub.style.fontSize = "10px";
+      sub.style.opacity = "0.6";
+      btn.appendChild(timeLabel);
+      btn.appendChild(sub);
+
+      addTap(btn, (e) => {
+        if (!e.defaultPrevented && e.type === 'click') e.preventDefault && e.preventDefault();
+        if (btn.disabled) {
+          if (state === "blocked") {
+            openWishlistModal(slot, null);
+          }
+          return;
+        }
+        const sid = slot.id;
+        if (timelineSelection.has(sid)) timelineSelection.delete(sid);
+        else timelineSelection.add(sid);
+        normalizeSelectionToContiguous();
+
+        const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
+        allButtons.forEach(b => {
+          const id = b.getAttribute("data-slot-id");
+          if (timelineSelection.has(id)) {
+            b.classList.remove("bg-white","slot-partial");
+            b.classList.add("slot-selected");
+            b.setAttribute("aria-pressed","true");
+          } else {
+            b.setAttribute("aria-pressed","false");
+            if (b.disabled) {
+            } else {
+              b.classList.remove("slot-selected");
+              b.classList.add("bg-white");
+            }
+          }
+        });
+
+        centerTimelineNode(btn);
+        renderSelectionSummary(bucketGrid, occupancy);
       });
 
-      // center the clicked element in the timeline on small screens
-      centerTimelineNode(btn);
-
-      renderSelectionSummary(bucketGrid, occupancy);
+      bucketGrid.appendChild(btn);
     });
 
-    bucketGrid.appendChild(btn);
-  });
+    renderSelectionSummary(bucketGrid, occupancy);
 
-  container.appendChild(bucketGrid);
-  slotPanel.appendChild(container);
+    if (timelineSelection.size) {
+      const firstId = Array.from(timelineSelection)[0];
+      const el = bucketGrid.querySelector(`[data-slot-id="${firstId}"]`);
+      if (el) centerTimelineNode(el);
+    }
 
-  // initial empty summary or selection summary
-  renderSelectionSummary(bucketGrid, occupancy);
-
-  // if there is a previously selected tick, ensure it's visible
-  if (timelineSelection.size) {
-    const firstId = Array.from(timelineSelection)[0];
-    const el = bucketGrid.querySelector(`[data-slot-id="${firstId}"]`);
-    if (el) centerTimelineNode(el);
+    console.debug('renderSlots END');
+  } catch (err) {
+    console.error('renderSlots threw:', err);
+    // surface to UI so you can see in mobile screenshot
+    if (slotPanel) slotPanel.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fee2e2;color:#991b1b">renderSlots error: ${String(err).slice(0,200)}</div>`;
   }
 }
 
