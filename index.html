@@ -18,9 +18,7 @@
   <meta name="theme-color" content="#22c55e"/>
 
   <!-- Leaflet CSS (for the interactive map) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-o9N1j7kG6bV+g7o4gkX1gk2KQmKk1bP4d4w3x23h2mA="
-        crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
   <style>
     body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial; }
@@ -373,15 +371,11 @@
       document.addEventListener('keydown', (e) => {
         if(e.key === 'Escape' && modal && !modal.classList.contains('hidden')) hideModal();
       });
-
-      // swipe/scroll friendly: ensure body not locked by modal on small devices (app.js may set styles)
     })();
   </script>
 
   <!-- Leaflet JS + map init (add before closing body) -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-o3Qm2I8dJgV6t7R4V+IYyc1YyA5qjv6Yg2QYV0y+8E0="
-          crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
     (function(){
@@ -425,13 +419,13 @@
       const baseMaps = { "Light": lightTiles, "Dark": darkTiles };
       L.control.layers(baseMaps, null, { collapsed: true, position: 'topright' }).addTo(map);
 
-      // Custom marker icon using your uploaded image (platform will convert this local path to a usable URL)
-      const iconUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
+      // Custom marker icon using your logo in assets (you requested logo as marker)
+      const iconUrl = './assets/Logo_RED.jpg';
       const turfIcon = L.icon({
         iconUrl,
-        iconSize: [56, 56],
-        iconAnchor: [28, 56],
-        popupAnchor: [0, -48]
+        iconSize: [48, 48],      // tweak size as needed
+        iconAnchor: [24, 48],
+        popupAnchor: [0, -40]
       });
 
       // Marker + popup (includes directions link)
