@@ -16,137 +16,39 @@
     .hero-height{height:36vh}
     @media(min-width:768px){.hero-height{height:48vh}}
 
-    /* timeline / ticks: improved to prevent overflow and keep text inside boxes */
-    .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:.5rem}
+    /* timeline / ticks: prevent scrollbar overlap and keep content clipped */
+    .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:14px}
+    .timeline-grid{display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(78px, min-content);gap:10px;align-items:center}
 
-    /* Bigger, more comfortable timeline ticks: wider columns and taller boxes */
-    .timeline-grid{
-      display:inline-grid;
-      grid-auto-flow:column;
-      /* wider default tick so text doesn't overflow; adjust as needed */
-      grid-auto-columns:minmax(78px, min-content);
-      gap:10px;
-      align-items:center;
-    }
-
-    /* slot tick */
-    .slot-btn{
-      box-sizing: border-box;
-      min-width:78px;
-      padding:8px 12px;
-      display:inline-flex;
-      flex-direction:column;
-      align-items:center;
-      justify-content:center;
-      border-radius:12px;
-      border:1px solid #e5e7eb;
-      font-size:14px;
-      background:#fff;
-
-      /* KEEP CONTENT INSIDE THE BOX */
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      height: 64px;          /* increased height */
-      max-width: 130px;      /* prevents tick growing too wide; tweak if you want wider ticks */
-      line-height: 1.1;
-    }
-
-    /* internal label styling — ensure each line is clipped not overflowing */
-    .slot-btn > div {
-      display:block;
-      overflow:hidden;
-      white-space:nowrap;
-      text-overflow:ellipsis;
-      width:100%;
-      text-align:center;
-      padding:0;
-      margin:0;
-    }
-    .slot-btn > div:first-child { font-size:13px; font-weight:600; }
-    .slot-btn > div:last-child  { font-size:11px; opacity:.8; margin-top:4px; }
+    .slot-btn{box-sizing:border-box;min-width:78px;padding:8px 12px;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border-radius:12px;border:1px solid #e5e7eb;font-size:14px;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;height:64px;max-width:130px;line-height:1.1}
+    .slot-btn>div{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;text-align:center;padding:0;margin:0}
+    .slot-btn>div:first-child{font-size:13px;font-weight:600}
+    .slot-btn>div:last-child{font-size:11px;opacity:.8;margin-top:4px}
 
     .slot-past{background:#f8fafc;color:#9ca3af;border-color:#f1f5f9}
     .slot-blocked{background:#fff1f2;color:#991b1b;border-color:#fee2e2}
     .slot-partial{background:#fffbeb;color:#92400e;border-color:#fef3c7}
     .slot-selected{background:var(--accent);color:#fff;border-color:#15803d}
 
-    #slotTabs{display:flex;gap:.5rem;overflow-x:auto;padding-bottom:.5rem}
-    #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
-    @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} #pitchSelectorContainer .w-56{width:100%} }
-    @media(max-width:480px){ #modal > div{height:100vh;border-radius:0;padding:16px} }
-    .touch-cta{padding:12px 16px;border-radius:12px}
-    @media(max-width:880px){ .md\:col-span-2{grid-column:1 / -1} }
-    a.wa-btn{display:inline-block;padding:10px 12px;border-radius:10px;background:var(--accent);color:#fff;text-decoration:none}
-
-    /* ---------------- Mobile-specific improvements ---------------- */
-    /* Compact header, tighter hero and container on small screens */
+    /* smaller adjustments for small screens */
     @media (max-width: 420px) {
-      header.sticky { padding: 6px 8px; }
-      header a.flex.items-center.gap-2 .brand-text,
-      .site-brand-text { display: none; }
-
-      .hero-height { height: 24vh !important; min-height: 130px !important; }
-      .hero-height.video-fallback { height: 140px !important; }
-
-      .max-w-6xl { padding-left: 12px !important; padding-right: 12px !important; }
-
-      .p-4 { padding: 10px !important; }
-      .rounded-2xl { border-radius: 12px !important; }
-
-      #pitchSelectorContainer .pitch-btn {
-        display: block !important;
-        width: 100% !important;
-        padding: 12px 14px !important;
-        font-size: 15px !important;
-        margin: 8px 0 !important;
-        border-radius: 12px !important;
-      }
-
-      /* timeline: slightly larger gaps and ticks on tiny phones; keep text clipped */
       .timeline-container { padding: 8px 6px !important; }
       .timeline-grid { gap:12px; grid-auto-columns:minmax(88px, min-content); }
-      .slot-btn {
-        min-width: 88px !important;
-        max-width: 150px !important;
-        height: 72px !important;
-        padding: 10px 12px !important;
-        border-radius: 14px !important;
-        font-size: 15px !important;
-      }
-      .slot-btn > div:first-child { font-size:14px; }
-      .slot-btn > div:last-child  { font-size:12px; }
-
-      .mobile-booking-cta {
-        display: block !important;
-        position: fixed !important;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 90;
-        padding: 10px 12px;
-        background: rgba(255,255,255,0.98);
-        border-top: 1px solid rgba(0,0,0,0.06);
-        box-shadow: 0 -6px 18px rgba(0,0,0,0.06);
-        -webkit-backdrop-filter: blur(6px);
-        backdrop-filter: blur(6px);
-        padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
-      }
-      .mobile-booking-cta .btn { width: 100%; padding: 12px 14px; font-size: 16px; border-radius: 10px; }
-      h1 { font-size: 1.2rem; }
+      .slot-btn { min-width: 88px !important; max-width:150px !important; height:72px !important; padding:10px 12px !important; border-radius:14px !important; font-size:15px !important }
+      .slot-btn>div:first-child{font-size:14px}
+      .slot-btn>div:last-child{font-size:12px}
     }
 
-    /* Slightly smaller ticks on small tablets */
-    @media (min-width: 421px) and (max-width: 768px) {
-      .slot-btn { min-width: 72px; height: 56px; }
-      .hero-height { height: 30vh; }
-    }
+    /* helper / summary */
+    .timeline-summary{margin-top:0.75rem}
+
+    /* pitch buttons */
+    #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
+    @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} }
   </style>
 </head>
 
 <body class="bg-white text-gray-900">
-
-  <!-- header simplified to keep mobile-first -->
   <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a class="flex items-center gap-2" href="#" aria-label="GODs Turf home">
@@ -160,13 +62,10 @@
     </div>
   </header>
 
-  <!-- HERO: small video or fallback image -->
   <section class="relative">
     <div class="relative">
-      <!-- keep video but ensure fallback img is present; use a small height on phones -->
       <video class="w-full object-cover hero-height video-fallback" autoplay muted loop playsinline>
         <source src="./assets/turf_video.mp4" type="video/mp4">
-        <!-- fallback image -->
       </video>
       <img src="./assets/turf_left.jpg" alt="turf preview" class="w-full object-cover hero-height video-fallback" style="display:none" />
       <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-black/18 to-black/10 pointer-events-none"></div>
@@ -180,23 +79,13 @@
     </div>
   </section>
 
-  <!-- Booking widget -->
   <section id="book" class="max-w-6xl mx-auto px-4 py-6">
     <div class="grid md:grid-cols-3 gap-6">
       <div class="md:col-span-2 space-y-4">
-        <!-- date + pitch selector -->
         <div class="p-4 border rounded-2xl bg-white">
           <label for="date" class="text-xs text-gray-600 block mb-2">Choose date</label>
           <input id="date" type="date" class="w-full md:w-auto border rounded-xl px-3 py-2" />
-          <div id="pitchSelectorContainer" class="mt-4">
-            <!-- pitch selector buttons: JS will populate or you can leave these as default -->
-            <div class="flex gap-2 flex-wrap" id="pitchButtonsStatic">
-              <button class="pitch-btn bg-white border" data-id="half-left">Half (left)</button>
-              <button class="pitch-btn bg-white border" data-id="half-right">Half (right)</button>
-              <button class="pitch-btn bg-white border" data-id="full">Full</button>
-              <button class="pitch-btn bg-white border" data-id="cricket">Full (Cricket)</button>
-            </div>
-          </div>
+          <div id="pitchSelectorContainer" class="mt-4"></div>
 
           <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
             <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
@@ -210,23 +99,17 @@
           </div>
         </div>
 
-        <!-- slots -->
         <div class="p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold mb-3">Available slots</h3>
-          <div id="slotTabs" class="mb-3" aria-hidden="false">
-            <!-- JS can create tabs here -->
-          </div>
+          <div id="slotTabs" class="mb-3"></div>
 
-           <div id="slotPanel" class="timeline-container rounded-md" role="region" aria-live="polite">
-             <div class="timeline-grid" id="timelineGrid" role="list"></div>
-           </div>
+          <div id="slotPanel" class="timeline-container rounded-md" role="region" aria-live="polite"></div>
 
           <div class="mt-3 text-sm text-gray-600">
             Tap 30-min ticks above to choose start/end. Minimum booking: <strong>60 mins.</strong>
           </div>
         </div>
 
-        <!-- confirmation card (populated by script) -->
         <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
           <h4 class="font-semibold mb-1">Booking created</h4>
           <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
@@ -243,18 +126,10 @@
         </div>
       </div>
 
-      <!-- aside -->
       <aside class="space-y-4">
         <div class="p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold">Facilities & Amenities</h3>
-          <div id="amenities" class="mt-3 flex flex-wrap gap-2">
-            <!-- JS can populate badges; for now static -->
-            <span class="px-3 py-1 rounded-full border text-sm">Floodlights</span>
-            <span class="px-3 py-1 rounded-full border text-sm">Parking</span>
-            <span class="px-3 py-1 rounded-full border text-sm">Changing Rooms</span>
-            <span class="px-3 py-1 rounded-full border text-sm">Water Bottle</span>
-            <span class="px-3 py-1 rounded-full border text-sm">First Aid</span>
-          </div>
+          <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
           <div class="mt-4 text-sm text-gray-600">
             <p><strong>Hours:</strong> 24 × 7</p>
             <p><strong>Buffer:</strong> 10 mins between slots</p>
@@ -274,20 +149,13 @@
     </div>
   </section>
 
-  <!-- rules section (optional but app may reference #rulesList) -->
   <section id="rules" class="max-w-6xl mx-auto px-4 pb-8">
     <div class="p-4 border rounded-2xl bg-white">
       <h3 class="font-semibold mb-2">Rules</h3>
-      <ul id="rulesList" class="space-y-2 text-sm">
-        <li>No smoking</li>
-        <li>No outside food</li>
-        <li>Arrive 10 mins before</li>
-        <li>Respect booking time</li>
-      </ul>
+      <ul id="rulesList" class="space-y-2 text-sm"></ul>
     </div>
   </section>
 
-  <!-- modal -->
   <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
     <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
       <div class="flex items-center justify-between mb-2">
@@ -309,7 +177,6 @@
     </div>
   </div>
 
-  <!-- mobile sticky booking CTA (visible only on small screens via CSS) -->
   <div class="mobile-booking-cta hidden" id="mobileBookingCta" role="region" aria-live="polite">
     <div class="max-w-6xl mx-auto px-4">
       <div class="flex gap-3">
@@ -318,9 +185,7 @@
     </div>
   </div>
 
-  <!-- small helpers -->
   <script>
-    // set date min/max and some link defaults
     (function(){
       const dateInput = document.getElementById('date');
       if (dateInput) {
@@ -333,7 +198,6 @@
         dateInput.max = iso(maxDate);
         dateInput.value = iso(today);
       }
-
       const phone = "+917003396909";
       const wa = document.getElementById("waLink");
       const callH = document.getElementById("callLinkHeader");
@@ -341,12 +205,10 @@
       if(wa) wa.href = `https://wa.me/${phone.replace(/\+/g,'')}`;
       if(callH) callH.href = `tel:${phone}`;
       if(callF) callF.href = `tel:${phone}`;
-      // default inbox email
       const email = document.getElementById('emailLink');
       if (email && !email.href) email.href = 'mailto:godsturf@gmail.com';
     })();
 
-    // modal keyboard close on Escape + focus trap minimal
     (function(){
       const modal = document.getElementById('modal');
       const closeBtn = document.getElementById('closeModal');
@@ -358,10 +220,8 @@
     })();
   </script>
 
-  <!-- main module script (replace with your ./scripts/app.js path) -->
   <script type="module" src="./scripts/app.js"></script>
 
-  <!-- footer -->
   <footer class="border-t mt-8">
     <div class="max-w-6xl mx-auto px-4 py-6 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
       <span>© <span id="year"></span> GODs Turf</span>
@@ -375,7 +235,6 @@
   <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 
   <script>
-    // small UX wiring for mobile CTA: show mobile CTA on small screens
     (function() {
       function updateMobileCta() {
         const cta = document.getElementById('mobileBookingCta');
@@ -389,17 +248,14 @@
       window.addEventListener('resize', updateMobileCta);
       updateMobileCta();
 
-      // wire mobile book button to the same flow as your main Book button (if you have one in app.js)
       const mobileBook = document.getElementById('bookBtnMobile');
       if (mobileBook) {
         mobileBook.addEventListener('click', () => {
-          // if your app.js exposes a global openBookingModal or similar, call it; otherwise fallback to native modal
           const modal = document.getElementById('modal');
           if (modal) {
             modal.classList.remove('hidden');
             document.body.style.overflow = 'hidden';
           } else {
-            // fallback: scroll to booking section
             const book = document.getElementById('book');
             if (book) book.scrollIntoView({ behavior: 'smooth' });
           }
