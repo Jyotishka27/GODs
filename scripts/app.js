@@ -245,7 +245,7 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
   const addr = $("#addr");
   if (addr) addr.textContent = "Near City Sports Complex, New Town, Kolkata 700156";
   const emailLink = $("#emailLink");
-  if (emailLink) { emailLink.href = "mailto:hello@gods.example"; emailLink.textContent = "hello@gods.example"; }
+  if (emailLink) { emailLink.href = "mailto:godsturf@gmail.com"; emailLink.textContent = "godsturf@gmail.com"; }
 })();
 
 /* ---------- Firestore helpers ---------- */
@@ -614,7 +614,7 @@ mConfirm?.addEventListener("click", async () => {
       if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
       if (camount) camount.textContent = `₹${selectedAmount}`;
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
-      if (confirmWA) confirmWA.href = `https://wa.me/919876543210?text=${waMsg}`;
+      if (confirmWA) confirmWA.href = `https://wa.me/917003396909?text=${waMsg}`;
 
       show(confirmCard);
       closeModalFn();
