@@ -385,10 +385,10 @@ async function renderSlots() {
   const headTitle = document.createElement("h4");
   headTitle.className = "font-semibold";
   const titleMap = {
-    midnight: "Midnight slots (12:00 AM — 6:00 AM)",
+    midnight: "Midnight slots (00:00 AM — 6:00 AM)",
     morning: "Morning slots (6:00 AM — 12:00 PM)",
     afternoon: "Afternoon slots (12:00 PM — 6:00 PM)",
-    evening: "Evening slots (6:00 PM — 12:00 AM)"
+    evening: "Evening slots (6:00 PM — 00:00 AM)"
   };
   headTitle.textContent = titleMap[selectedBucket] || "Slots";
   header.appendChild(headTitle);
