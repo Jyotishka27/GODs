@@ -885,7 +885,7 @@ function initPitchSelector() {
 
 /* ---------- initialization ---------- */
 window.addEventListener("load", async () => {
-  selectedDate = dateInput?.value || fmtDateISO(new Date()));
+  selectedDate = dateInput?.value || fmtDateISO(new Date());
   if (dateInput && !dateInput.value) dateInput.value = selectedDate;
 
   let selectorApi = { setSelected: (k)=>{} };
