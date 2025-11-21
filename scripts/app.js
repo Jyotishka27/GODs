@@ -113,7 +113,7 @@ const COURT_META = {
   "5A": { type: "half", label: "Half Ground A", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground B", dims: "55×90" },
   "7A": { type: "full", label: "Full Ground", dims: "110×90" },
-  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" }
+  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
 
 /* ---------- NORMALIZATION (robust) ---------- */
@@ -139,7 +139,7 @@ function metaFor(courtId) {
   if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground A", dims: "55×90" };
   if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground B", dims: "55×90" };
   if (/7A|FULL/.test(key)) return { type: "full", label: "Full Ground", dims: "110×90" };
-  if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Full Ground (Cricket)", dims: "55×90" };
+  if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" };
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
