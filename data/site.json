@@ -61,7 +61,7 @@
   },
   "resourceCapacityNote": "resourceCapacity = number of concurrent bookings the physical resource can host (e.g., main-pitch can host 2 halves simultaneously). If you intended this to be total units across courts, set to 6.",
   "hours": {
-    "open": 24 * 7
+    "open": 24 hours
   },
   "slotIntervalMins": 60,
   "defaultDurationMins": 60,
