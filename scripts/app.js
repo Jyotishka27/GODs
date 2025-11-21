@@ -746,7 +746,7 @@ function initPitchSelector() {
   }
 
   // Use uploaded gallery preview path (platform converts the local path to a URL)
-  const previewUrl = '/mnt/data/18f0cde1-0b47-43fb-ab5f-e1f707ab51a9.png';
+  const previewUrl = './assets/turf_left.jpg';
 
   container.innerHTML = `
     <div class="rounded-2xl shadow-md p-3 bg-white">
