@@ -1,3 +1,4 @@
+// preview asset: /mnt/data/16f7a93d-b2bd-4b2c-8929-ec494ae4a70e.png
 // scripts/app.js (mobile-friendly drop-in replacement)
 // Booking + Wishlist front-end using Firestore (no auth)
 // - Slot buckets, pitch selector, pending/confirmed status display
