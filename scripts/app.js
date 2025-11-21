@@ -113,7 +113,7 @@ const BUFFER_MIN = 10;
 const MIN_BOOKING_MINS = 60; // min 60 minutes
 
 /* ---------- IMPORTANT: quoted keys (fix previously broken syntax) ---------- */
-const PRICE_BY_COURT = { "5A": 750, "5B": 750, "7A": 1250, "CRK": 1250 };
+const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 const COURT_META = {
   "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground Right", dims: "55×90" },
