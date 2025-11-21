@@ -55,6 +55,7 @@ function addTap(el, handler) {
   if (!el) return;
   el.addEventListener('click', handler);
   el.addEventListener('touchstart', function touchHandler(e){
+    // avoid double-fire; keep it simple
     e.preventDefault();
     handler(e);
   }, { passive: false });
@@ -85,6 +86,7 @@ function generate30MinSlots() {
   for (let h = 0; h < 24; h++) {
     for (let m of [0, 30]) {
       const start = `${String(h).padStart(2, "0")}:${String(m).padStart(2,"0")}`;
+      // compute end
       const endDate = new Date(1970,0,1,h,m,0);
       endDate.setMinutes(endDate.getMinutes() + 30);
       const end = `${String(endDate.getHours()).padStart(2,"0")}:${String(endDate.getMinutes()).padStart(2,"0")}`;
@@ -98,10 +100,7 @@ const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {
 
 const BUFFER_MIN = 10;
 const MIN_BOOKING_MINS = 60; // min 60 minutes
-
-/* ---------- IMPORTANT: prices are stored as HOURLY rates ---------- */
-/* Use these as per-hour price. We always compute prorated amounts = perHour * (durationMins/60) */
-const PRICE_PER_HOUR = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
+const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 
 const COURT_META = {
   "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
@@ -110,7 +109,7 @@ const COURT_META = {
   "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
 
-/* ---------- normalization & meta helpers ---------- */
+/* ---------- normalization & meta helpers (same as before) ---------- */
 function normalizedKey(val) {
   if (val === undefined || val === null) return "";
   let v = String(val).trim();
@@ -139,6 +138,7 @@ function metaFor(courtId) {
 /* ---------- expand bookings to 30-min slots ---------- */
 function expandBookingToSlots(bookingRangeId) {
   const [start, end] = bookingRangeId.split("-");
+  // find index by start
   const startIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[0] === start);
   const endIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[1] === end);
   if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
@@ -146,6 +146,7 @@ function expandBookingToSlots(bookingRangeId) {
     for (let i = startIdx; i <= endIdx; i++) out.push(ALL_SLOTS[i].id);
     return out;
   }
+  // fallback compute by minutes
   const sH = Number(start.split(":")[0]), sM = Number(start.split(":")[1]);
   const eH = Number(end.split(":")[0]), eM = Number(end.split(":")[1]);
   const sT = sH * 60 + sM;
@@ -259,7 +260,7 @@ const confirmWA = $("#confirmWA");
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey('5A');
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
-let selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0; // explicit hourly price
+let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 let selectedBucket = "morning";
 let modalMode = "booking";
 let preferredBookingId = null;
@@ -338,12 +339,14 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- UI: timeline renderer helpers ---------- */
+/* ---------- UI: timeline renderer ---------- */
 function createTimelineElement() {
   const container = document.createElement("div");
   container.className = "w-full overflow-x-auto py-2";
+  // timeline inner grid
   const grid = document.createElement("div");
   grid.className = "inline-grid gap-1";
+  // 48 columns, each tick min-width on mobile
   grid.style.gridAutoFlow = "column";
   grid.style.gridAutoColumns = "min-content";
   grid.style.alignItems = "center";
@@ -351,14 +354,116 @@ function createTimelineElement() {
   return { container, grid };
 }
 
+function renderTimeline(gridEl, occupancyMap, dateISO) {
+  gridEl.innerHTML = ""; // reset
+
+  ALL_SLOTS.forEach(slot => {
+    const btn = document.createElement("button");
+    btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
+    btn.setAttribute("data-slot-id", slot.id);
+    btn.setAttribute("aria-pressed", "false");
+    btn.style.minWidth = "64px"; // small pill shape; adjust if you want narrower
+    btn.style.display = "inline-flex";
+    btn.style.flexDirection = "column";
+    btn.style.alignItems = "center";
+    btn.style.justifyContent = "center";
+    btn.style.gap = "4px";
+
+    const past = isSlotInPast(slot.id, dateISO);
+    const occ = occupancyMap[slot.id] || { halves: new Set(), full:false, cricket:false, bookings:[] };
+
+    // determine state (CONSISTENT: only full/cricket block everything; halves => partial)
+    let state = "available";
+    if (past) {
+      state = "past";
+    } else {
+      if (occ.full || occ.cricket) {
+        state = "blocked";
+      } else if (occ.halves && occ.halves.size >= 1) {
+        state = "partial"; // visually indicate one (or more) halves taken but still selectable when appropriate
+      } else {
+        state = "available";
+      }
+    }
+
+    // visual classes
+    if (state === "past") {
+      btn.classList.add("bg-gray-50","text-gray-400","border-gray-100");
+      btn.disabled = true;
+      btn.setAttribute("aria-disabled","true");
+    } else if (state === "blocked") {
+      btn.classList.add("bg-red-50","text-red-700","border-red-100");
+      btn.disabled = true;
+      btn.setAttribute("aria-disabled","true");
+    } else if (state === "partial") {
+      // partial (some halves booked) => still possibly bookable depending on selected court
+      btn.classList.add("bg-yellow-50","text-yellow-800","border-yellow-100");
+      btn.disabled = false;
+      btn.setAttribute("aria-disabled","false");
+    } else {
+      btn.classList.add("bg-white","text-gray-800");
+      btn.disabled = false;
+      btn.setAttribute("aria-disabled","false");
+    }
+
+    // label & meta
+    const timeLabel = document.createElement("div");
+    timeLabel.textContent = to12FromHHMM(slot.start);
+    timeLabel.style.fontSize = "11px";
+    timeLabel.style.opacity = "0.95";
+
+    const sub = document.createElement("div");
+    sub.textContent = slot.label.split("-")[0]; // raw hh:mm
+    sub.style.fontSize = "10px";
+    sub.style.opacity = "0.6";
+
+    btn.appendChild(timeLabel);
+    btn.appendChild(sub);
+
+    // click handler toggles selection if available or partial
+    addTap(btn, (e) => {
+      e.preventDefault();
+      if (btn.disabled) {
+        // open wishlist if blocked/past? For past do nothing.
+        if (state === "blocked") {
+          // open wishlist modal for the single slot (only if user wants)
+          openWishlistModal(slot, null);
+        }
+        return;
+      }
+      // toggle selection in timelineSelection (we will auto-expand to contiguous range)
+      const slotId = slot.id;
+      if (timelineSelection.has(slotId)) {
+        timelineSelection.delete(slotId);
+      } else {
+        timelineSelection.add(slotId);
+      }
+
+      // important: after toggling, normalize selection to contiguous range between min and max
+      normalizeSelectionToContiguous();
+      // re-render highlights & summary
+      applySelectionHighlights(gridEl);
+      renderSelectionSummary(gridEl);
+    });
+
+    gridEl.appendChild(btn);
+  });
+
+  // initial selection UI
+  applySelectionHighlights(gridEl);
+}
+
+/* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
 function normalizeSelectionToContiguous() {
   if (!timelineSelection.size) return;
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
   const min = indices[0], max = indices[indices.length - 1];
+  // replace selection with all slots in min..max
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
 }
 
+/* apply visual highlight to selected slots in the grid */
 function applySelectionHighlights(gridEl) {
   const buttons = gridEl.querySelectorAll("button[data-slot-id]");
   buttons.forEach(b => {
@@ -369,8 +474,9 @@ function applySelectionHighlights(gridEl) {
       b.setAttribute("aria-pressed","true");
     } else {
       b.setAttribute("aria-pressed","false");
+      // restore baseline classes by inspecting current disabled state
       if (b.disabled) {
-        // leave disabled colors
+        // keep existing disabled color classes as set earlier, do nothing
       } else {
         b.classList.remove("bg-emerald-600","text-white","border-emerald-700");
         b.classList.add("bg-white","text-gray-800");
@@ -379,8 +485,9 @@ function applySelectionHighlights(gridEl) {
   });
 }
 
-/* show selection summary and actions; ALL pricing computations use PRICE_PER_HOUR and duration */
+/* show selection summary below timeline and show Book / Waitlist / Clear actions */
 function renderSelectionSummary(gridEl) {
+  // make or reuse a summary area below gridEl.parentElement
   let summary = gridEl.parentElement.querySelector(".timeline-summary");
   if (!summary) {
     summary = document.createElement("div");
@@ -397,26 +504,30 @@ function renderSelectionSummary(gridEl) {
     return;
   }
 
+  // compute contiguous selection start/end
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
   const min = indices[0], max = indices[indices.length-1];
   const startSlot = ALL_SLOTS[min];
   const endSlot = ALL_SLOTS[max];
+  // end time is end of endSlot chunk
   const startTime = startSlot.id.split("-")[0];
   const endTime = endSlot.id.split("-")[1];
   const durationMins = (max - min + 1) * 30;
-
-  // compute prorated price from hourly base
-  const perHour = PRICE_PER_HOUR[selectedCourt] || 0;
-  const computedAmount = Math.round(perHour * (durationMins / 60));
+  const price = selectedAmount; // price currently per booking slot in your model; adjust if needed per minute
+  // Option: prorate price by duration if required. For now we keep base price as per court (you can modify to per-hour pro-rate)
+  const priceMetric = Math.round((price * (durationMins/60)) || price);
 
   const info = document.createElement("div");
   info.className = "text-sm text-gray-700";
-  info.innerHTML = `<div><strong>${to12FromHHMM(startTime)} — ${to12FromHHMM(endTime)}</strong> · ${durationMins} mins</div><div class="text-xs text-gray-500 mt-1">Estimate: ₹${computedAmount}</div>`;
+  info.innerHTML = `<div><strong>${to12FromHHMM(startTime)} — ${to12FromHHMM(endTime)}</strong> · ${durationMins} mins</div><div class="text-xs text-gray-500 mt-1">Estimate: ₹${priceMetric}</div>`;
   summary.appendChild(info);
 
+  // actions container
   const actions = document.createElement("div");
   actions.className = "flex items-center gap-2";
 
+  // determine if selection is fully available
+  // selection availability computed with isRangeAvailableFor
   const availability = isRangeAvailableFor(window.__GODsTurf?.occupancyMap || {}, startSlot.id, durationMins, selectedCourt);
   const anyPast = isSlotInPast(startSlot.id, selectedDate);
 
@@ -429,12 +540,15 @@ function renderSelectionSummary(gridEl) {
     bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
     bookBtn.disabled = true;
   } else if (!availability.allowed) {
+    // blocked -> show Waitlist
     bookBtn.textContent = "Join Waitlist";
     bookBtn.classList.add("bg-yellow-600");
     addTap(bookBtn, () => {
+      // open wishlist modal for this range (we will set selectedSlot to startSlot)
       openWishlistModal(startSlot, null, { startSlotId: startSlot.id, durationMins, rangeId: makeRangeIdFromStartAndDuration(startSlot.id, durationMins) });
     });
   } else {
+    // available -> show Book but enforce min booking
     if (durationMins < MIN_BOOKING_MINS) {
       bookBtn.textContent = "Minimum 60 mins";
       bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
@@ -443,6 +557,7 @@ function renderSelectionSummary(gridEl) {
       bookBtn.textContent = "Book";
       bookBtn.classList.add("bg-emerald-600");
       addTap(bookBtn, () => {
+        // open booking modal, with selectedSlot set to startSlot and mDuration set to durationMins
         openBookingModalWithRange(startSlot, durationMins);
       });
     }
@@ -469,8 +584,8 @@ async function renderSlots() {
 
   if (!selectedCourt) {
     selectedCourt = '5A';
-    selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0;
-    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedPricePerHour); } catch(e){}
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
   }
 
   let bookingsAll = [], wishlists = [];
@@ -481,12 +596,16 @@ async function renderSlots() {
     toast("Error fetching bookings/wishlists.", { error: true });
   }
 
+  // occupancy map per 30-min slot
   const occupancy = computeSlotOccupancy(bookingsAll);
+  // store occupancy globally for helper usage
   window.__GODsTurf = window.__GODsTurf || {};
   window.__GODsTurf.occupancyMap = occupancy;
 
+  // wishlist map (by 30-min slot id)
   const wishlistMap = (wishlists || []).reduce((acc, w) => {
     if (!w || !w.slotId) return acc;
+    // expand wishlist slotId into its constituent 30-min slots if needed (wishlist might be a single 30-min)
     const covered = expandBookingToSlots(w.slotId);
     covered.forEach(sid => {
       if (!acc[sid]) acc[sid] = [];
@@ -496,11 +615,13 @@ async function renderSlots() {
   }, {});
 
   const buckets = bucketSlots(ALL_SLOTS);
+  // compute available starts (min 60)
   const bucketInfo = {};
   Object.entries(buckets).forEach(([k, items])=>{
     const total = items.length;
     let available = 0;
     items.forEach(s => {
+      // check if starting here we can get min booking
       const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
       if (ok && !isSlotInPast(s.id, selectedDate)) available++;
     });
@@ -529,7 +650,7 @@ async function renderSlots() {
   });
   slotTabs.appendChild(tabsWrap);
 
-  // Render timeline for selected bucket
+  // Render timeline for the selected bucket
   slotPanel.innerHTML = "";
   const bucketItems = buckets[selectedBucket] || [];
   const header = document.createElement("div");
@@ -554,15 +675,19 @@ async function renderSlots() {
   }
 
   // timeline container
-  const { container } = createTimelineElement();
+  const { container, grid } = createTimelineElement();
+  // limit grid to only show ticks for this bucket in order
+  // create a temporary grid that contains only the bucket items
   const bucketGrid = document.createElement("div");
   bucketGrid.className = "inline-grid gap-1";
   bucketGrid.style.gridAutoFlow = "column";
   bucketGrid.style.gridAutoColumns = "min-content";
   bucketGrid.style.alignItems = "center";
   bucketGrid.style.width = "100%";
-
-  // render bucket ticks
+  // copy relevant slots into a lightweight structure and render using renderTimeline-like method
+  // We'll reuse renderTimeline but provide a temporary occupancy map for those slots (occupancy is global though)
+  grid.appendChild(bucketGrid);
+  // render buttons into bucketGrid instead of global grid element
   bucketItems.forEach(slot => {
     const btn = document.createElement("button");
     btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
@@ -577,10 +702,19 @@ async function renderSlots() {
     const past = isSlotInPast(slot.id, selectedDate);
     const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
+    // CONSISTENT state logic here as well
     let state = "available";
-    if (past) state = "past";
-    else if (occ.full || occ.cricket) state = "blocked";
-    else if (occ.halves.size >= 1) state = "partial";
+    if (past) {
+      state = "past";
+    } else {
+      if (occ.full || occ.cricket) {
+        state = "blocked";
+      } else if (occ.halves && occ.halves.size >= 1) {
+        state = "partial";
+      } else {
+        state = "available";
+      }
+    }
 
     if (state === "past") {
       btn.classList.add("bg-gray-50","text-gray-400","border-gray-100");
@@ -615,6 +749,7 @@ async function renderSlots() {
       e.preventDefault();
       if (btn.disabled) {
         if (state === "blocked") {
+          // open wishlist modal for this 30-min slot
           openWishlistModal(slot, null);
         }
         return;
@@ -623,7 +758,8 @@ async function renderSlots() {
       if (timelineSelection.has(sid)) timelineSelection.delete(sid);
       else timelineSelection.add(sid);
       normalizeSelectionToContiguous();
-      // update visuals
+      // refresh visuals & summary
+      // update all bucket buttons
       const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
       allButtons.forEach(b => {
         const id = b.getAttribute("data-slot-id");
@@ -647,8 +783,9 @@ async function renderSlots() {
     bucketGrid.appendChild(btn);
   });
 
-  container.appendChild(bucketGrid);
+  container.querySelector("div")?.remove?.(); // no-op safe
   slotPanel.appendChild(container);
+  container.firstChild.replaceWith(bucketGrid); // place bucketGrid in container
 
   // initial empty summary
   renderSelectionSummary(bucketGrid);
@@ -656,44 +793,39 @@ async function renderSlots() {
 
 /* ---------- modal helpers & booking flow ---------- */
 function openBookingModalWithRange(startSlot, durationMins) {
+  // Set modal fields, including setting a hidden m-duration if present
   modalMode = "booking";
-  selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0;
+  selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
   if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${to12FromHHMM(startSlot.start)}`;
-  const rangeId = makeRangeIdFromStartAndDuration(startSlot.id, durationMins);
-  if (mWhen) mWhen.textContent = `${selectedDate} · ${to12HourLabel(rangeId)}`;
-  // show prorated price
-  const prorated = Math.round(selectedPricePerHour * (durationMins / 60));
-  if (mPrice) mPrice.textContent = `₹${prorated}`;
+  if (mWhen) mWhen.textContent = `${selectedDate} · ${to12FromHHMM(startSlot.start)} — ${to12FromHHMM(makeRangeIdFromStartAndDuration(startSlot.id, durationMins).split("-")[1])}`;
+  if (mPrice) mPrice.textContent = `₹${selectedAmount}`;
   if (mConfirm) mConfirm.textContent = "Confirm";
   preferredBookingId = null;
   resetModalFields();
+  // set duration hidden input (if present)
   const mD = $("#m-duration");
   if (mD) mD.value = String(durationMins);
+  // store selection in global for confirm handler
   modal.dataset.startSlot = startSlot.id;
   modal.dataset.durationMins = String(durationMins);
-  modal.dataset.rangeId = rangeId;
   openModal();
 }
 
 function openBookingModal(slot) {
+  // legacy - open booking for one 30-min tick (used elsewhere)
   openBookingModalWithRange(slot, MIN_BOOKING_MINS);
 }
 
 function openWishlistModal(slot, prefBookingId = null, extra = null) {
   modalMode = "wishlist";
-  selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0;
+  selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
   if (mTitle) mTitle.textContent = `Wishlist — ${selectedCourt} · ${to12FromHHMM(slot.start)}`;
   if (mWhen) mWhen.textContent = `${selectedDate} · ${to12FromHHMM(slot.start)}`;
-  // default show hourly price or 30-min if extra provided
-  if (extra && extra.durationMins) {
-    const amt = Math.round(selectedPricePerHour * (extra.durationMins / 60));
-    if (mPrice) mPrice.textContent = `₹${amt}`;
-  } else {
-    if (mPrice) mPrice.textContent = `${selectedPricePerHour ? `₹${selectedPricePerHour}` : "-"}`;
-  }
+  if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
   if (mConfirm) mConfirm.textContent = "Save to Wishlist";
   preferredBookingId = prefBookingId || null;
   resetModalFields();
+  // store preferred range if present
   if (extra && extra.startSlotId) {
     modal.dataset.startSlot = extra.startSlotId;
     modal.dataset.durationMins = String(extra.durationMins || 30);
@@ -714,6 +846,7 @@ function resetModalFields() {
   if (mPhone) mPhone.value = "";
   if (mCoupon) mCoupon.value = "";
   if (mNotes) mNotes.value = "";
+  // clean dataset
   if (modal) {
     delete modal.dataset.startSlot;
     delete modal.dataset.durationMins;
@@ -739,6 +872,7 @@ function validateModalFields() {
   const phone = mPhone?.value?.trim() || "";
   if (name.length < 2) return { ok:false, reason:"name" };
   if (!/^\+?\d{8,15}$/.test(phone)) return { ok:false, reason:"phone" };
+  // duration only read from modal dataset (we validate below before booking)
   return { ok:true, name, phone };
 }
 
@@ -758,6 +892,7 @@ mConfirm?.addEventListener("click", async () => {
 
   if (!selectedCourt || !selectedDate) { return alert("Select a pitch and date first."); }
 
+  // determine startSlot & duration from modal.dataset
   const startSlotId = modal?.dataset?.startSlot;
   const durationMins = Number(modal?.dataset?.durationMins || MIN_BOOKING_MINS);
   const rangeId = modal?.dataset?.rangeId || makeRangeIdFromStartAndDuration(startSlotId, durationMins);
@@ -772,6 +907,7 @@ mConfirm?.addEventListener("click", async () => {
   const normCourt = normalizedKey(selectedCourt);
 
   if (modalMode === "booking") {
+    // final availability check
     const existing = await fetchBookingsForDate(selectedDate);
     const occMap = computeSlotOccupancy(existing);
     const availabilityCheck = isRangeAvailableFor(occMap, startSlotId, durationMins, normCourt);
@@ -782,9 +918,9 @@ mConfirm?.addEventListener("click", async () => {
       return;
     }
 
-    // compute final prorated amount from hourly base
-    const perHour = PRICE_PER_HOUR[normCourt] || 0;
-    const amountToSave = Math.round(perHour * (durationMins / 60));
+    // ******** FIX HERE: prorate saved amount by duration ********
+    const amountToSave = Math.round((selectedAmount || 0) * (durationMins / 60));
+    // **********************************************************
 
     const booking = {
       userName: name,
@@ -795,7 +931,7 @@ mConfirm?.addEventListener("click", async () => {
       slotId: rangeId,
       slotLabel: to12HourLabel(rangeId),
       date: selectedDate,
-      amount: amountToSave,
+      amount: amountToSave, // saved prorated amount
       durationMins,
       status: "pending",
       createdAt: serverTimestamp()
@@ -807,13 +943,14 @@ mConfirm?.addEventListener("click", async () => {
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
       if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
-      if (camount) camount.textContent = `₹${booking.amount}`;
+      if (camount) camount.textContent = `₹${booking.amount}`; // show prorated amount
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
 
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
+      // clear timeline selection
       timelineSelection = new Set();
       renderSlots();
     } catch (err) {
@@ -827,8 +964,10 @@ mConfirm?.addEventListener("click", async () => {
   }
 
   if (modalMode === "wishlist") {
+    // save wishlist entry (rangeId or single slot)
     try {
       setConfirmLoading(true);
+      // dedupe check
       const dupQ = query(collection(db, "wishlists"),
         where("date","==", selectedDate),
         where("court","==", normalizedKey(selectedCourt)),
@@ -845,8 +984,8 @@ mConfirm?.addEventListener("click", async () => {
         return;
       }
 
-      const perHour = PRICE_PER_HOUR[normCourt] || 0;
-      const wishlistAmount = Math.round(perHour * (durationMins / 60));
+      // For wishlist we also save a prorated amount for clarity (same logic)
+      const wishlistAmount = Math.round((selectedAmount || 0) * (durationMins / 60));
 
       const wishlistEntry = {
         userName: name,
@@ -885,7 +1024,7 @@ dateInput?.addEventListener("change", ()=> {
   renderSlots();
 });
 
-/* ---------- pitch selector ---------- */
+/* ---------- pitch selector (reuse existing code or your original) ---------- */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
@@ -909,6 +1048,7 @@ function initPitchSelector() {
 
       <div class="relative flex flex-col md:flex-row gap-4">
         <div class="flex-1 flex justify-center">
+          <!-- simplified SVG pitch (kept same as before) -->
           <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
             <defs><linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2f7a2f"/><stop offset="100%" stop-color="#2aa02a"/></linearGradient></defs>
             <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
@@ -947,8 +1087,7 @@ function initPitchSelector() {
   function updateSelectedPanel(courtKey) {
     const meta = metaFor(courtKey);
     const labelWithDims = meta.label + (meta.dims ? ` · ${meta.dims}` : "");
-    selectedPricePerHour = PRICE_PER_HOUR[courtKey] || 0;
-    const price = selectedPricePerHour;
+    const price = PRICE_BY_COURT[courtKey] || 0;
     try {
       if (window && window.__GODsTurf && typeof window.__GODsTurf.updateSelectedUI === "function") {
         window.__GODsTurf.updateSelectedUI(labelWithDims, price);
@@ -965,15 +1104,17 @@ function initPitchSelector() {
     if (!pitchToCourt[pitchKey]) return;
     const target = pitchToCourt[pitchKey];
     selectedCourt = normalizedKey(target.id);
-    selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0;
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
     updateSelectedPanel(selectedCourt);
     try { renderSlots(); } catch(e) { console.warn("renderSlots not ready", e); }
   }
 
+  // wire pitch buttons
   $$(".pitch-btn", container).forEach(b => {
     addTap(b, (ev) => {
       const p = ev.currentTarget?.getAttribute("data-pitch");
       setSelectedByPitch(p);
+      // style toggling
       $$(".pitch-btn", container).forEach(x=> x.classList.remove("bg-green-600","text-white"));
       ev.currentTarget.classList.add("bg-green-600","text-white");
     });
@@ -1006,10 +1147,15 @@ window.addEventListener("load", async () => {
     selectorApi.setSelected('half-left');
   } catch (e) {
     selectedCourt = '5A';
-    selectedPricePerHour = PRICE_PER_HOUR[selectedCourt] || 0;
-    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedPricePerHour); } catch(e){}
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
   }
 
+  // small debug to help validate occupancy vs selectedCourt (remove if not needed)
+  window.__GODsTurf = window.__GODsTurf || {};
+  window.__GODsTurf.debug = function(){ console.log('DEBUG selectedCourt', selectedCourt); console.log('DEBUG occupancy sample', window.__GODsTurf.occupancyMap); };
+
+  // render initial slots/timeline
   setTimeout(()=> {
     try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
   }, 60);
