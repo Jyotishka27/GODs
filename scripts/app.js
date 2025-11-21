@@ -614,7 +614,7 @@ mConfirm?.addEventListener("click", async () => {
       if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
       if (camount) camount.textContent = `₹${selectedAmount}`;
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked slot ${selectedSlot.label} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
-      if (confirmWA) confirmWA.href = `https://wa.me/917003396909?text=${waMsg}`;
+      if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
 
       show(confirmCard);
       closeModalFn();
