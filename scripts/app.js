@@ -1,4 +1,4 @@
-// scripts/app.js (timeline multi-select, 30-min ticks, min 60 min booking)
+// scripts/app.js (mobile-optimized timeline multi-select, 30-min ticks, min 60 min booking)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -47,7 +47,7 @@ function toast(msg, opts = {}) {
       z-index: 99999;
     `;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), opts.duration || 5000);
+    setTimeout(() => t.remove(), opts.duration || 4500);
   } catch (e) { /* ignore */ }
 }
 
@@ -55,11 +55,23 @@ function addTap(el, handler) {
   if (!el) return;
   el.addEventListener('click', handler);
   el.addEventListener('touchstart', function touchHandler(e){
-    // avoid double-fire; keep it simple
+    // prevent duplicate click and allow immediate touch feedback
     e.preventDefault();
     handler(e);
   }, { passive: false });
 }
+
+/* ---------- debug: surface runtime errors into UI ---------- */
+window.addEventListener('error', ev => {
+  console.error('Runtime error:', ev.error || ev.message || ev);
+  const p = document.getElementById('slotPanel');
+  if (p) p.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fee2e2;color:#991b1b">Error: ${String(ev.error?.message || ev.message || ev).slice(0,300)}</div>`;
+});
+window.addEventListener('unhandledrejection', ev => {
+  console.error('Unhandled rejection:', ev.reason);
+  const p = document.getElementById('slotPanel');
+  if (p) p.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fff7ed;color:#92400e">Error: ${String(ev.reason).slice(0,300)}</div>`;
+});
 
 /* ---------- date/time helpers ---------- */
 function fmtDateISO(d) {
@@ -86,7 +98,6 @@ function generate30MinSlots() {
   for (let h = 0; h < 24; h++) {
     for (let m of [0, 30]) {
       const start = `${String(h).padStart(2, "0")}:${String(m).padStart(2,"0")}`;
-      // compute end
       const endDate = new Date(1970,0,1,h,m,0);
       endDate.setMinutes(endDate.getMinutes() + 30);
       const end = `${String(endDate.getHours()).padStart(2,"0")}:${String(endDate.getMinutes()).padStart(2,"0")}`;
@@ -100,8 +111,9 @@ const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {
 
 const BUFFER_MIN = 10;
 const MIN_BOOKING_MINS = 60; // min 60 minutes
-const PRICE_BY_COURT = { "5A": 750 * 1, "5B": 750 * 1, "7A": 1250 * 1, "CRK": 1250 * 1 }; // use base rates; you can change table later
 
+/* ---------- IMPORTANT: quoted keys (fix previously broken syntax) ---------- */
+const PRICE_BY_COURT = { "5A": 750, "5B": 750, "7A": 1250, "CRK": 1250 };
 const COURT_META = {
   "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
   "5B": { type: "half", label: "Half Ground Right", dims: "55×90" },
@@ -109,7 +121,7 @@ const COURT_META = {
   "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
 };
 
-/* ---------- normalization & meta helpers (same as before) ---------- */
+/* ---------- normalization & meta helpers ---------- */
 function normalizedKey(val) {
   if (val === undefined || val === null) return "";
   let v = String(val).trim();
@@ -218,7 +230,6 @@ function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCour
       if (occ.halves.size >= 2) return { allowed: false, reason: `Both halves booked at ${sid}` };
       // if this same half already booked by someone else -> blocked
       if (targetKey && occ.halves.has(targetKey)) return { allowed: false, reason: `You already booked this half at ${sid}` };
-      // otherwise the other half being present should not block booking this half
     } else if (tmeta.type === "full") {
       if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — half booked at ${sid}` };
       if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
@@ -246,7 +257,7 @@ function isSlotInPast(slotId, dateISO) {
   return slotDate.getTime() <= Date.now();
 }
 
-/* ---------- DOM refs ---------- */
+/* ---------- DOM refs (defensive) ---------- */
 const dateInput = $("#date");
 const slotTabs = $("#slotTabs");
 const slotPanel = $("#slotPanel");
@@ -269,7 +280,7 @@ const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
 /* ---------- state ---------- */
-let selectedCourt = normalizedKey('5A');
+let selectedCourt = normalizedKey("5A");
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 let selectedBucket = "morning";
@@ -350,38 +361,38 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- UI: timeline renderer (simplified container) ---------- */
+/* ---------- render helpers ---------- */
 function createTimelineElement() {
   const container = document.createElement("div");
-  container.className = "w-full overflow-x-auto py-2";
+  container.className = "timeline-container";
   return { container };
 }
 
 /* apply visual highlight to selected slots in the grid */
 function applySelectionHighlights(gridEl) {
+  if (!gridEl) return;
   const buttons = gridEl.querySelectorAll("button[data-slot-id]");
   buttons.forEach(b => {
     const sid = b.getAttribute("data-slot-id");
     if (timelineSelection.has(sid)) {
-      b.classList.remove("bg-white","bg-yellow-50");
-      b.classList.add("bg-emerald-600","text-white","border-emerald-700");
+      b.classList.remove("bg-white","slot-partial");
+      b.classList.add("slot-selected");
       b.setAttribute("aria-pressed","true");
     } else {
       b.setAttribute("aria-pressed","false");
-      // restore baseline classes by inspecting current disabled state
       if (b.disabled) {
-        // keep existing disabled color classes as set earlier, do nothing
+        // keep disabled styling
       } else {
-        b.classList.remove("bg-emerald-600","text-white","border-emerald-700");
-        b.classList.add("bg-white","text-gray-800");
+        b.classList.remove("slot-selected");
+        b.classList.add("bg-white");
       }
     }
   });
 }
 
 /* show selection summary below timeline and show Book / Waitlist / Clear actions */
-function renderSelectionSummary(gridEl) {
-  // make or reuse a summary area below gridEl (the gridEl is our bucketGrid)
+function renderSelectionSummary(gridEl, occupancyMap) {
+  if (!gridEl) return;
   let summary = gridEl.parentElement.querySelector(".timeline-summary");
   if (!summary) {
     summary = document.createElement("div");
@@ -403,11 +414,10 @@ function renderSelectionSummary(gridEl) {
   const min = indices[0], max = indices[indices.length-1];
   const startSlot = ALL_SLOTS[min];
   const endSlot = ALL_SLOTS[max];
-  // end time is end of endSlot chunk
   const startTime = startSlot.id.split("-")[0];
   const endTime = endSlot.id.split("-")[1];
   const durationMins = (max - min + 1) * 30;
-  const price = selectedAmount; // price per hour base
+  const price = selectedAmount;
   const priceMetric = Math.round((price * (durationMins/60)) || price);
 
   const info = document.createElement("div");
@@ -419,8 +429,8 @@ function renderSelectionSummary(gridEl) {
   const actions = document.createElement("div");
   actions.className = "flex items-center gap-2";
 
-  // selection availability
-  const availability = isRangeAvailableFor(window.__GODsTurf?.occupancyMap || {}, startSlot.id, durationMins, selectedCourt);
+  // determine availability
+  const availability = isRangeAvailableFor(occupancyMap || window.__GODsTurf?.occupancyMap || {}, startSlot.id, durationMins, selectedCourt);
   const anyPast = isSlotInPast(startSlot.id, selectedDate);
 
   const bookBtn = document.createElement("button");
@@ -432,14 +442,12 @@ function renderSelectionSummary(gridEl) {
     bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
     bookBtn.disabled = true;
   } else if (!availability.allowed) {
-    // blocked -> show Waitlist
     bookBtn.textContent = "Join Waitlist";
     bookBtn.classList.add("bg-yellow-600");
     addTap(bookBtn, () => {
       openWishlistModal(startSlot, null, { startSlotId: startSlot.id, durationMins, rangeId: makeRangeIdFromStartAndDuration(startSlot.id, durationMins) });
     });
   } else {
-    // available -> show Book but enforce min booking
     if (durationMins < MIN_BOOKING_MINS) {
       bookBtn.textContent = "Minimum 60 mins";
       bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
@@ -459,7 +467,7 @@ function renderSelectionSummary(gridEl) {
   addTap(clearBtn, ()=> {
     timelineSelection = new Set();
     applySelectionHighlights(gridEl);
-    renderSelectionSummary(gridEl);
+    renderSelectionSummary(gridEl, occupancyMap);
   });
 
   actions.appendChild(bookBtn);
@@ -467,9 +475,12 @@ function renderSelectionSummary(gridEl) {
   summary.appendChild(actions);
 }
 
-/* ---------- render slots wrapper (replaces old list) ---------- */
+/* ---------- render slots wrapper ---------- */
 async function renderSlots() {
-  if (!slotPanel || !slotTabs) return;
+  if (!slotPanel || !slotTabs) {
+    console.warn('renderSlots: slotPanel or slotTabs missing. Aborting render.');
+    return;
+  }
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
 
   if (!selectedCourt) {
@@ -562,19 +573,15 @@ async function renderSlots() {
     return;
   }
 
-  // timeline container (simpler & robust)
+  // timeline container
   const { container } = createTimelineElement();
   const bucketGrid = document.createElement("div");
-  bucketGrid.className = "inline-grid gap-1";
-  bucketGrid.style.gridAutoFlow = "column";
-  bucketGrid.style.gridAutoColumns = "min-content";
-  bucketGrid.style.alignItems = "center";
-  bucketGrid.style.width = "100%";
+  bucketGrid.className = "timeline-grid";
 
   // render buttons into bucketGrid
   bucketItems.forEach(slot => {
     const btn = document.createElement("button");
-    btn.className = "text-xs rounded-sm border px-2 py-2 leading-none select-none";
+    btn.className = "slot-btn";
     btn.setAttribute("data-slot-id", slot.id);
     btn.style.minWidth = "64px";
     btn.style.display = "inline-flex";
@@ -601,19 +608,19 @@ async function renderSlots() {
     }
 
     if (state === "past") {
-      btn.classList.add("bg-gray-50","text-gray-400","border-gray-100");
+      btn.classList.add("slot-past");
       btn.disabled = true;
       btn.setAttribute("aria-disabled","true");
     } else if (state === "blocked") {
-      btn.classList.add("bg-red-50","text-red-700","border-red-100");
+      btn.classList.add("slot-blocked");
       btn.disabled = true;
       btn.setAttribute("aria-disabled","true");
     } else if (state === "partial") {
-      btn.classList.add("bg-yellow-50","text-yellow-800","border-yellow-100");
+      btn.classList.add("slot-partial");
       btn.disabled = false;
       btn.setAttribute("aria-disabled","false");
     } else {
-      btn.classList.add("bg-white","text-gray-800");
+      btn.classList.add("bg-white");
       btn.disabled = false;
       btn.setAttribute("aria-disabled","false");
     }
@@ -646,20 +653,20 @@ async function renderSlots() {
       allButtons.forEach(b => {
         const id = b.getAttribute("data-slot-id");
         if (timelineSelection.has(id)) {
-          b.classList.remove("bg-white","bg-yellow-50");
-          b.classList.add("bg-emerald-600","text-white","border-emerald-700");
+          b.classList.remove("bg-white","slot-partial");
+          b.classList.add("slot-selected");
           b.setAttribute("aria-pressed","true");
         } else {
           b.setAttribute("aria-pressed","false");
           if (b.disabled) {
             // nothing
           } else {
-            b.classList.remove("bg-emerald-600","text-white","border-emerald-700");
-            b.classList.add("bg-white","text-gray-800");
+            b.classList.remove("slot-selected");
+            b.classList.add("bg-white");
           }
         }
       });
-      renderSelectionSummary(bucketGrid);
+      renderSelectionSummary(bucketGrid, occupancy);
     });
 
     bucketGrid.appendChild(btn);
@@ -669,7 +676,7 @@ async function renderSlots() {
   slotPanel.appendChild(container);
 
   // initial empty summary
-  renderSelectionSummary(bucketGrid);
+  renderSelectionSummary(bucketGrid, occupancy);
 }
 
 /* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
@@ -677,7 +684,6 @@ function normalizeSelectionToContiguous() {
   if (!timelineSelection.size) return;
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
   const min = indices[0], max = indices[indices.length - 1];
-  // replace selection with all slots in min..max
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
 }
@@ -688,19 +694,18 @@ function openBookingModalWithRange(startSlot, durationMins) {
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
   if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${to12FromHHMM(startSlot.start)}`;
   if (mWhen) mWhen.textContent = `${selectedDate} · ${to12FromHHMM(startSlot.start)} — ${to12FromHHMM(makeRangeIdFromStartAndDuration(startSlot.id, durationMins).split("-")[1])}`;
-  if (mPrice) mPrice.textContent = `₹${selectedAmount}`;
+  if (mPrice) mPrice.textContent = `₹${Math.round(selectedAmount * (durationMins/60))}`;
   if (mConfirm) mConfirm.textContent = "Confirm";
   preferredBookingId = null;
   resetModalFields();
   const mD = $("#m-duration");
   if (mD) mD.value = String(durationMins);
-  modal.dataset.startSlot = startSlot.id;
-  modal.dataset.durationMins = String(durationMins);
+  // consistent dataset key used everywhere: durationMins
+  if (modal) {
+    modal.dataset.startSlot = startSlot.id;
+    modal.dataset.durationMins = String(durationMins);
+  }
   openModal();
-}
-
-function openBookingModal(slot) {
-  openBookingModalWithRange(slot, MIN_BOOKING_MINS);
 }
 
 function openWishlistModal(slot, prefBookingId = null, extra = null) {
@@ -725,8 +730,8 @@ function openWishlistModal(slot, prefBookingId = null, extra = null) {
   setTimeout(()=> { mName?.focus(); }, 120);
 }
 
-function openModal() { modal?.classList.remove("hidden"); document.body.style.overflow = 'hidden'; }
-function closeModalFn() { modal?.classList.add("hidden"); resetModalFields(); document.body.style.overflow = ''; }
+function openModal() { if (modal) { modal.classList.remove("hidden"); document.body.style.overflow = 'hidden'; } }
+function closeModalFn() { if (modal) modal.classList.add("hidden"); resetModalFields(); document.body.style.overflow = ''; }
 function resetModalFields() {
   if (mName) mName.value = "";
   if (mPhone) mPhone.value = "";
@@ -776,6 +781,7 @@ mConfirm?.addEventListener("click", async () => {
 
   if (!selectedCourt || !selectedDate) { return alert("Select a pitch and date first."); }
 
+  // determine startSlot & duration from modal.dataset
   const startSlotId = modal?.dataset?.startSlot;
   const durationMins = Number(modal?.dataset?.durationMins || MIN_BOOKING_MINS);
   const rangeId = modal?.dataset?.rangeId || makeRangeIdFromStartAndDuration(startSlotId, durationMins);
@@ -801,9 +807,8 @@ mConfirm?.addEventListener("click", async () => {
       return;
     }
 
-    // ******** FIX HERE: prorate saved amount by duration ********
+    // prorate saved amount by duration
     const amountToSave = Math.round((selectedAmount || 0) * (durationMins / 60));
-    // **********************************************************
 
     const booking = {
       userName: name,
@@ -833,6 +838,7 @@ mConfirm?.addEventListener("click", async () => {
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
+      // clear timeline selection
       timelineSelection = new Set();
       renderSlots();
     } catch (err) {
@@ -846,8 +852,10 @@ mConfirm?.addEventListener("click", async () => {
   }
 
   if (modalMode === "wishlist") {
+    // save wishlist entry (rangeId or single slot)
     try {
       setConfirmLoading(true);
+      // dedupe check
       const dupQ = query(collection(db, "wishlists"),
         where("date","==", selectedDate),
         where("court","==", normalizedKey(selectedCourt)),
@@ -864,6 +872,7 @@ mConfirm?.addEventListener("click", async () => {
         return;
       }
 
+      // For wishlist we also save a prorated amount for clarity
       const wishlistAmount = Math.round((selectedAmount || 0) * (durationMins / 60));
 
       const wishlistEntry = {
@@ -903,7 +912,7 @@ dateInput?.addEventListener("change", ()=> {
   renderSlots();
 });
 
-/* ---------- pitch selector (reuse existing code or your original) ---------- */
+/* ---------- pitch selector ---------- */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) {
@@ -915,9 +924,9 @@ function initPitchSelector() {
 
   container.innerHTML = `
     <div class="rounded-2xl shadow-md p-3 bg-white">
-      <div class="flex justify-between items-center mb-3">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-3 gap-3">
         <h3 class="text-lg font-medium">Choose pitch</h3>
-        <div class="space-x-2">
+        <div class="space-x-2 w-full sm:w-auto">
           <button data-pitch="half-left" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (left)</button>
           <button data-pitch="half-right" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (right)</button>
           <button data-pitch="full" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full</button>
@@ -927,7 +936,7 @@ function initPitchSelector() {
 
       <div class="relative flex flex-col md:flex-row gap-4">
         <div class="flex-1 flex justify-center">
-          <!-- simplified SVG pitch (kept same as before) -->
+          <!-- simplified SVG pitch -->
           <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
             <defs><linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2f7a2f"/><stop offset="100%" stop-color="#2aa02a"/></linearGradient></defs>
             <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
