@@ -421,7 +421,7 @@ function renderSelectionSummary(gridEl, occupancyMap) {
   const anyPast = isSlotInPast(startSlot.id, selectedDate);
 
   const bookBtn = document.createElement("button");
-  bookBtn.className = "px-4 py-2 rounded-xl";
+  bookBtn.className = "px-4 py-2 rounded-xl text-white";
   bookBtn.style.minWidth = "140px";
 
   if (anyPast) {
@@ -441,7 +441,7 @@ function renderSelectionSummary(gridEl, occupancyMap) {
       bookBtn.disabled = true;
     } else {
       bookBtn.textContent = "Book";
-      bookBtn.classList.add("site-accent");
+      bookBtn.classList.add("bg-emerald-600");
       addTap(bookBtn, () => {
         openBookingModalWithRange(startSlot, durationMins);
       });
@@ -496,6 +496,85 @@ async function renderSlots() {
     window.__GODsTurf = window.__GODsTurf || {};
     window.__GODsTurf.occupancyMap = occupancy;
 
+    
+    // --- Single-line time picker (inserted) ---
+    try {
+      const existingPicker = document.getElementById('singleLinePicker');
+      if (existingPicker) existingPicker.remove();
+      const picker = document.createElement('div');
+      picker.id = 'singleLinePicker';
+      picker.className = 'single-line-picker timeline-container';
+      picker.style.paddingBottom = '8px';
+      picker.style.overflowX = 'auto';
+      const row = document.createElement('div');
+      row.className = 'flex';
+      // build chips for each slot (use start time)
+      ALL_SLOTS.forEach(slt => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-slot-id', slt.id);
+        btn.setAttribute('data-time', slt.start);
+        btn.className = 'slot-chip';
+        btn.style.minWidth = '84px';
+        btn.style.padding = '8px 10px';
+        btn.style.marginRight = '8px';
+        btn.style.borderRadius = '10px';
+        btn.style.border = '1px solid #e5e7eb';
+        btn.style.background = '#f1f5f9';
+        btn.innerText = slt.start;
+        // availability check for minimum booking starting at this slot
+        const ok = isRangeAvailableFor(occupancy, slt.id, MIN_BOOKING_MINS, selectedCourt).allowed && !isSlotInPast(slt.id, selectedDate);
+        if (!ok) {
+          btn.disabled = true;
+          btn.style.opacity = '0.45';
+        }
+        btn.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          // attempt to select a contiguous range starting here with min booking
+          const idx = slotIndexMap[slt.id];
+          const needed = Math.ceil(MIN_BOOKING_MINS / 30);
+          const endIdx = Math.min(ALL_SLOTS.length - 1, idx + needed - 1);
+          // check availability across needed slots
+          let allOk = true;
+          for (let i = idx; i <= endIdx; i++) {
+            const id = ALL_SLOTS[i].id;
+            const ok2 = isRangeAvailableFor(occupancy, id, MIN_BOOKING_MINS, selectedCourt).allowed && !isSlotInPast(id, selectedDate);
+            if (!ok2) { allOk = false; break; }
+          }
+          if (!allOk) {
+            toast('Selected start time cannot accommodate minimum booking or is blocked.', { error: true });
+            return;
+          }
+          // set timelineSelection to contiguous needed slots
+          timelineSelection = new Set();
+          for (let i = idx; i <= endIdx; i++) timelineSelection.add(ALL_SLOTS[i].id);
+          // update UI
+          renderSelectionSummary(picker, occupancy);
+          // highlight selected chips
+          row.querySelectorAll('button.slot-chip').forEach(b => {
+            const id = b.getAttribute('data-slot-id');
+            if (timelineSelection.has(id)) {
+              b.classList.add('site-accent');
+              b.style.color = '#fff';
+              b.style.borderColor = 'transparent';
+            } else {
+              b.classList.remove('site-accent');
+              b.style.color = '';
+              b.style.borderColor = '#e5e7eb';
+            }
+          });
+          // center the first selected element
+          const el = row.querySelector(`[data-slot-id="${ALL_SLOTS[idx].id}"]`);
+          if (el) centerTimelineNode(el);
+        });
+        row.appendChild(btn);
+      });
+      picker.appendChild(row);
+      // insert picker at top of slotPanel
+      if (slotPanel) slotPanel.insertBefore(picker, slotPanel.firstChild);
+    } catch(e) { console.warn('singleLinePicker init failed', e); }
+    // --- end picker ---
+    
     const buckets = bucketSlots(ALL_SLOTS);
     const bucketInfo = {};
     Object.entries(buckets).forEach(([k, items])=>{
@@ -521,7 +600,7 @@ async function renderSlots() {
     tabOrder.forEach(t=>{
       const isActive = (t.key === selectedBucket);
       const btn = document.createElement("button");
-      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "site-accent":"bg-white"].join(" ");
+      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "bg-emerald-600 text-white":"bg-white"].join(" ");
       btn.style.flex = "1 1 0";
       btn.style.minWidth = "120px";
       btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
@@ -1026,8 +1105,8 @@ function initPitchSelector() {
       const p = ev.currentTarget?.getAttribute("data-pitch");
       setSelectedByPitch(p);
       // style toggling
-      $$(".pitch-btn", container).forEach(x=> x.classList.remove("site-accent"));
-      ev.currentTarget.classList.add("site-accent");
+      $$(".pitch-btn", container).forEach(x=> x.classList.remove("bg-green-600","text-white"));
+      ev.currentTarget.classList.add("bg-green-600","text-white");
     });
   });
 
