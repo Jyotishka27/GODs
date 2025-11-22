@@ -12,6 +12,11 @@
 
   <style>
     :root{--accent:#16a34a;--muted:#6b7280}
+    /* helper accent utility classes used by patched JS */
+    .site-accent{background:var(--accent) !important;color:#fff !important}
+    .site-accent-text{color:var(--accent) !important}
+    .site-accent-border{border-color:var(--accent) !important}
+    .site-accent-hover:hover{background:color-mix(in srgb, var(--accent) 80%, transparent) !important}
     body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
     .hero-height{height:36vh}
     @media(min-width:768px){.hero-height{height:48vh}}
