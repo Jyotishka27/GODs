@@ -267,26 +267,26 @@ function isSlotInPast(slotId, dateISO) {
 }
 
 /* ---------- DOM refs (defensive) ---------- */
-let dateInput = $("#date");
-let slotTabs = $("#slotTabs");
-let slotPanel = $("#slotPanel");
-let modal = $("#modal");
-let closeModal = $("#closeModal");
-let mTitle = $("#m-title");
-let mWhen = $("#m-when");
-let mPrice = $("#m-price");
-let mName = $("#m-name");
-let mPhone = $("#m-phone");
-let mCoupon = $("#m-coupon");
-let mNotes = $("#m-notes");
-let mConfirm = $("#m-confirm");
-let mCancel = $("#m-cancel");
-let confirmCard = $("#confirmCard");
-let cid = $("#c-id");
-let cwhen = $("#c-when");
-let ccourt = $("#c-court");
-let camount = $("#c-amount");
-let confirmWA = $("#confirmWA");
+const dateInput = $("#date");
+const slotTabs = $("#slotTabs");
+const slotPanel = $("#slotPanel");
+const modal = $("#modal");
+const closeModal = $("#closeModal");
+const mTitle = $("#m-title");
+const mWhen = $("#m-when");
+const mPrice = $("#m-price");
+const mName = $("#m-name");
+const mPhone = $("#m-phone");
+const mCoupon = $("#m-coupon");
+const mNotes = $("#m-notes");
+const mConfirm = $("#m-confirm");
+const mCancel = $("#m-cancel");
+const confirmCard = $("#confirmCard");
+const cid = $("#c-id");
+const cwhen = $("#c-when");
+const ccourt = $("#c-court");
+const camount = $("#c-amount");
+const confirmWA = $("#confirmWA");
 
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey("5A");
@@ -782,4 +782,292 @@ function setConfirmLoading(isLoading) {
 }
 function validateModalFields() {
   const name = mName?.value?.trim() || "";
-  const phone = mPhone?.value?.trim() ||
+  const phone = mPhone?.value?.trim() || "";
+  if (name.length < 2) return { ok:false, reason:"name" };
+  if (!/^\+?\d{8,15}$/.test(phone)) return { ok:false, reason:"phone" };
+  return { ok:true, name, phone };
+}
+
+closeModal?.addEventListener("click", closeModalFn);
+mCancel?.addEventListener("click", closeModalFn);
+
+mConfirm?.addEventListener("click", async () => {
+  const v = validateModalFields();
+  if (!v.ok) {
+    if (v.reason === "name") toast("Please enter your name.", { error: true });
+    if (v.reason === "phone") toast("Enter a valid phone with country code (e.g. +91...).", { error: true });
+    return;
+  }
+  const { name, phone } = v;
+  const coupon = mCoupon?.value?.trim();
+  const notes = mNotes?.value?.trim();
+
+  if (!selectedCourt || !selectedDate) { return alert("Select a pitch and date first."); }
+
+  // determine startSlot & duration from modal.dataset
+  const startSlotId = modal?.dataset?.startSlot;
+  const durationMins = Number(modal?.dataset?.durationMins || MIN_BOOKING_MINS);
+  const rangeId = modal?.dataset?.rangeId || makeRangeIdFromStartAndDuration(startSlotId, durationMins);
+
+  if (!startSlotId) return alert("No time selected.");
+
+  if (isSlotInPast(startSlotId, selectedDate)) {
+    toast("That slot is in the past — cannot save booking or wishlist.", { error: true });
+    return;
+  }
+
+  const normCourt = normalizedKey(selectedCourt);
+
+  if (modalMode === "booking") {
+    // final availability check
+    const existing = await fetchBookingsForDate(selectedDate);
+    const occMap = computeSlotOccupancy(existing);
+    const availabilityCheck = isRangeAvailableFor(occMap, startSlotId, durationMins, normCourt);
+    if (!availabilityCheck.allowed) {
+      alert("Sorry — that slot/time is not available: " + (availabilityCheck.reason || "Unavailable"));
+      closeModalFn();
+      renderSlots();
+      return;
+    }
+
+    // prorate saved amount by duration
+    const amountToSave = Math.round((selectedAmount || 0) * (durationMins / 60));
+
+    const booking = {
+      userName: name,
+      phone,
+      coupon: coupon || null,
+      notes: notes || null,
+      court: normCourt,
+      slotId: rangeId,
+      slotLabel: to12HourLabel(rangeId),
+      date: selectedDate,
+      amount: amountToSave,
+      durationMins,
+      status: "pending",
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      setConfirmLoading(true);
+      const ref = await addDoc(collection(db, "bookings"), booking);
+      if (cid) cid.textContent = ref.id;
+      if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
+      if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
+      if (camount) camount.textContent = `₹${booking.amount}`;
+      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
+      if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
+
+      show(confirmCard);
+      closeModalFn();
+      toast("Booking successful — check confirmation card.", { duration: 5000 });
+      // clear timeline selection
+      timelineSelection = new Set();
+      renderSlots();
+    } catch (err) {
+      console.error("Booking failed", err);
+      toast("Booking failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
+      alert("Booking failed — check console. Error: " + (err?.message || String(err)));
+    } finally {
+      setConfirmLoading(false);
+    }
+    return;
+  }
+
+  if (modalMode === "wishlist") {
+    // save wishlist entry (rangeId or single slot)
+    try {
+      setConfirmLoading(true);
+      // dedupe check
+      const dupQ = query(collection(db, "wishlists"),
+        where("date","==", selectedDate),
+        where("court","==", normalizedKey(selectedCourt)),
+        where("slotId","==", rangeId),
+        where("phone","==", phone)
+      );
+      const dupSnap = await getDocs(dupQ);
+      const dup = [];
+      dupSnap.forEach(d => { const dt = d.data(); dt._id = d.id; dup.push(dt); });
+      if (dup.length) {
+        toast("You are already on the wishlist for this slot.", { duration: 5000 });
+        setConfirmLoading(false);
+        closeModalFn();
+        return;
+      }
+
+      // For wishlist we also save a prorated amount for clarity
+      const wishlistAmount = Math.round((selectedAmount || 0) * (durationMins / 60));
+
+      const wishlistEntry = {
+        userName: name,
+        phone,
+        notes: notes || null,
+        coupon: coupon || null,
+        court: normalizedKey(selectedCourt),
+        slotId: rangeId,
+        slotLabel: to12HourLabel(rangeId),
+        date: selectedDate,
+        amount: wishlistAmount,
+        preferredBookingId: preferredBookingId || null,
+        status: "open",
+        createdAt: serverTimestamp()
+      };
+      const ref = await addDoc(collection(db, "wishlists"), wishlistEntry);
+      toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
+      closeModalFn();
+      timelineSelection = new Set();
+      renderSlots();
+    } catch (err) {
+      console.error("Wishlist save failed", err);
+      toast("Wishlist save failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
+      alert("Wishlist save failed — check console. Error: " + (err?.message || String(err)));
+    } finally {
+      setConfirmLoading(false);
+    }
+    return;
+  }
+});
+
+/* ---------- hide confirm card on date change ---------- */
+dateInput?.addEventListener("change", ()=> {
+  hide(confirmCard);
+  timelineSelection = new Set();
+  renderSlots();
+});
+
+/* ---------- pitch selector ---------- */
+function initPitchSelector() {
+  const container = document.getElementById("pitchSelectorContainer");
+  if (!container) {
+    console.debug("Pitch selector container not found");
+    return { setSelected: (k)=>{} };
+  }
+
+  const previewUrl = './assets/turf_left.jpg';
+
+  container.innerHTML = `
+    <div class="rounded-2xl shadow-md p-3 bg-white">
+      <div class="flex flex-col sm:flex-row justify-between items-center mb-3 gap-3">
+        <h3 class="text-lg font-medium">Choose pitch</h3>
+        <div class="space-x-2 w-full sm:w-auto">
+          <button data-pitch="half-left" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (left)</button>
+          <button data-pitch="half-right" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (right)</button>
+          <button data-pitch="full" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full</button>
+          <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
+        </div>
+      </div>
+
+      <div class="relative flex flex-col md:flex-row gap-4">
+        <div class="flex-1 flex justify-center">
+          <!-- simplified SVG pitch -->
+          <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
+            <defs><linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2f7a2f"/><stop offset="100%" stop-color="#2aa02a"/></linearGradient></defs>
+            <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
+            <line x1="600" y1="40" x2="600" y2="760" stroke="#fff" stroke-width="3"/>
+            <circle cx="600" cy="400" r="90" fill="none" stroke="#fff" stroke-width="3"/>
+            <rect x="40" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
+            <rect x="980" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
+            <rect id="area-full" x="40" y="40" width="1120" height="720" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
+            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
+            <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
+            <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
+            <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
+            <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
+            <g id="selectionHighlight"></g>
+          </svg>
+        </div>
+
+        <div class="w-56 flex-shrink-0">
+          <div class="rounded-md overflow-hidden border p-2 bg-white shadow-sm">
+            <div class="text-xs text-gray-500 mb-2">Current UI preview</div>
+            <img id="pitchPreviewImg" src="${previewUrl}" alt="current-ui" class="w-full h-40 object-cover rounded" />
+            <div class="mt-2 text-xs text-gray-600">This preview is the image you uploaded — useful while replacing the half-ground graphic.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const pitchToCourt = {
+    "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
+    "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
+    "full": { id: "7A", label: "Full Ground", dims: COURT_META["7A"].dims },
+    "full-cricket": { id: "CRK", label: "Full Ground (Cricket)", dims: COURT_META["CRK"].dims }
+  };
+
+  function updateSelectedPanel(courtKey) {
+    const meta = metaFor(courtKey);
+    const labelWithDims = meta.label + (meta.dims ? ` · ${meta.dims}` : "");
+    const price = PRICE_BY_COURT[courtKey] || 0;
+    try {
+      if (window && window.__GODsTurf && typeof window.__GODsTurf.updateSelectedUI === "function") {
+        window.__GODsTurf.updateSelectedUI(labelWithDims, price);
+      } else {
+        const s = document.getElementById('selectedPitch');
+        const p = document.getElementById('selectedPrice');
+        if (s) s.textContent = labelWithDims;
+        if (p) p.textContent = price ? `₹${price}` : '—';
+      }
+    } catch (e) { console.warn("updateSelectedPanel failed", e); }
+  }
+
+  function setSelectedByPitch(pitchKey) {
+    if (!pitchToCourt[pitchKey]) return;
+    const target = pitchToCourt[pitchKey];
+    selectedCourt = normalizedKey(target.id);
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    updateSelectedPanel(selectedCourt);
+    try { renderSlots(); } catch(e) { console.warn("renderSlots not ready", e); }
+  }
+
+  // wire pitch buttons
+  $$(".pitch-btn", container).forEach(b => {
+    addTap(b, (ev) => {
+      const p = ev.currentTarget?.getAttribute("data-pitch");
+      setSelectedByPitch(p);
+      // style toggling
+      $$(".pitch-btn", container).forEach(x=> x.classList.remove("bg-green-600","text-white"));
+      ev.currentTarget.classList.add("bg-green-600","text-white");
+    });
+  });
+
+  const areaLeft = container.querySelector("#area-left");
+  const areaRight = container.querySelector("#area-right");
+  const areaFull = container.querySelector("#area-full");
+  const areaCricket = container.querySelector("#area-cricket");
+
+  addTap(areaLeft, ()=> setSelectedByPitch("half-left"));
+  addTap(areaRight, ()=> setSelectedByPitch("half-right"));
+  addTap(areaFull, ()=> setSelectedByPitch("full"));
+  addTap(areaCricket, ()=> setSelectedByPitch("full-cricket"));
+
+  return {
+    setSelected: (pitchKey) => { if (!pitchToCourt[pitchKey]) return; setSelectedByPitch(pitchKey); }
+  };
+}
+
+/* ---------- initialization ---------- */
+window.addEventListener("load", async () => {
+  selectedDate = dateInput?.value || fmtDateISO(new Date());
+  if (dateInput && !dateInput.value) dateInput.value = selectedDate;
+
+  let selectorApi = { setSelected: (k)=>{} };
+  try { selectorApi = initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
+
+  try {
+    selectorApi.setSelected('half-left');
+  } catch (e) {
+    selectedCourt = '5A';
+    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
+    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
+  }
+
+  // small debug to help validate occupancy vs selectedCourt (remove if not needed)
+  window.__GODsTurf = window.__GODsTurf || {};
+  window.__GODsTurf.debug = function(){ console.log('DEBUG selectedCourt', selectedCourt); console.log('DEBUG occupancy sample', window.__GODsTurf.occupancyMap); };
+
+  // render initial slots/timeline
+  setTimeout(()=> {
+    try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
+  }, 60);
+});
