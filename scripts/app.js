@@ -288,91 +288,6 @@ const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
-/* ---------- Week/Month date row (generated) ---------- */
-let viewMode = 'week'; // 'week' or 'month'
-const baseDate = new Date();
-
-function generateDatesForView(mode) {
-  if (mode === 'week') {
-    return Array.from({ length: 7 }).map((_, i) => {
-      const d = new Date(baseDate);
-      d.setDate(d.getDate() + i);
-      return { key: d.toISOString().slice(0,10), label: d.toLocaleDateString(undefined,{ weekday:'short', month:'short', day:'numeric'}) };
-    });
-  }
-  const year = baseDate.getFullYear();
-  const month = baseDate.getMonth();
-  const daysInMonth = new Date(year, month+1, 0).getDate();
-  return Array.from({ length: daysInMonth }).map((_, i) => {
-    const d = new Date(year, month, i+1);
-    return { key: d.toISOString().slice(0,10), label: d.toLocaleDateString(undefined,{ weekday:'short', month:'short', day:'numeric'}) };
-  });
-}
-
-function renderDateRow() {
-  try {
-    // ensure slotTabs exists and insert dateRow above it if not present
-    const target = slotPanel || document.body;
-    let dateRow = document.getElementById('dateRow');
-    if (!dateRow) {
-      dateRow = document.createElement('div');
-      dateRow.id = 'dateRow';
-      dateRow.className = 'mb-3';
-      if (slotPanel && slotPanel.parentElement) {
-        slotPanel.parentElement.insertBefore(dateRow, slotPanel);
-      } else {
-        // fallback: insert before slotTabs if present
-        if (slotTabs && slotTabs.parentElement) slotTabs.parentElement.insertBefore(dateRow, slotTabs);
-      }
-    }
-    dateRow.innerHTML = '';
-    // controls: view toggles
-    const controls = document.createElement('div');
-    controls.className = 'flex items-center justify-between mb-2 gap-2';
-    const left = document.createElement('div');
-    left.className = 'flex items-center gap-2';
-    const weekBtn = document.createElement('button');
-    weekBtn.type = 'button';
-    weekBtn.textContent = 'Week';
-    weekBtn.className = viewMode === 'week' ? 'px-3 py-1 rounded-md site-accent' : 'px-3 py-1 rounded-md border';
-    weekBtn.addEventListener('click', () => { viewMode = 'week'; renderDateRow(); renderSlots(); });
-    const monthBtn = document.createElement('button');
-    monthBtn.type = 'button';
-    monthBtn.textContent = 'Month';
-    monthBtn.className = viewMode === 'month' ? 'px-3 py-1 rounded-md site-accent' : 'px-3 py-1 rounded-md border';
-    monthBtn.addEventListener('click', () => { viewMode = 'month'; renderDateRow(); renderSlots(); });
-    left.appendChild(weekBtn);
-    left.appendChild(monthBtn);
-    controls.appendChild(left);
-    dateRow.appendChild(controls);
-
-    // render dates horizontal
-    const dates = generateDatesForView(viewMode);
-    const row = document.createElement('div');
-    row.className = 'flex gap-2 overflow-x-auto pb-2';
-    dates.forEach(d => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = (selectedDate === d.key) ? 'min-w-[96px] flex-shrink-0 p-2 rounded-lg text-left site-accent' : 'min-w-[96px] flex-shrink-0 p-2 rounded-lg text-left bg-white border';
-      btn.style.minWidth = '96px';
-      btn.innerHTML = `<div class="text-[13px] opacity-80">${d.label.split(',')[0]}</div><div class="font-medium text-sm mt-1">${new Date(d.key).toLocaleDateString(undefined,{ month:'short', day:'numeric' })}</div>`;
-      btn.addEventListener('click', ()=> {
-        selectedDate = d.key;
-        if (dateInput) dateInput.value = selectedDate;
-        renderDateRow();
-        renderSlots();
-      });
-      row.appendChild(btn);
-    });
-    dateRow.appendChild(row);
-  } catch (e) {
-    console.warn('renderDateRow failed', e);
-  }
-}
-
-// render date row initially after DOM ready
-
-
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey("5A");
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
@@ -1234,4 +1149,7 @@ window.addEventListener("load", async () => {
   setTimeout(()=> {
     try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
   }, 60);
+
+  // render date row UI (added)
+  try { renderDateRow(); } catch(e) { console.warn('renderDateRow init failed', e); }
 });
