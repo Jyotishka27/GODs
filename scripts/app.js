@@ -421,7 +421,7 @@ function renderSelectionSummary(gridEl, occupancyMap) {
   const anyPast = isSlotInPast(startSlot.id, selectedDate);
 
   const bookBtn = document.createElement("button");
-  bookBtn.className = "px-4 py-2 rounded-xl text-white";
+  bookBtn.className = "px-4 py-2 rounded-xl";
   bookBtn.style.minWidth = "140px";
 
   if (anyPast) {
@@ -441,7 +441,7 @@ function renderSelectionSummary(gridEl, occupancyMap) {
       bookBtn.disabled = true;
     } else {
       bookBtn.textContent = "Book";
-      bookBtn.classList.add("bg-emerald-600");
+      bookBtn.classList.add("site-accent");
       addTap(bookBtn, () => {
         openBookingModalWithRange(startSlot, durationMins);
       });
@@ -521,7 +521,7 @@ async function renderSlots() {
     tabOrder.forEach(t=>{
       const isActive = (t.key === selectedBucket);
       const btn = document.createElement("button");
-      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "bg-emerald-600 text-white":"bg-white"].join(" ");
+      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "site-accent":"bg-white"].join(" ");
       btn.style.flex = "1 1 0";
       btn.style.minWidth = "120px";
       btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
@@ -1026,8 +1026,8 @@ function initPitchSelector() {
       const p = ev.currentTarget?.getAttribute("data-pitch");
       setSelectedByPitch(p);
       // style toggling
-      $$(".pitch-btn", container).forEach(x=> x.classList.remove("bg-green-600","text-white"));
-      ev.currentTarget.classList.add("bg-green-600","text-white");
+      $$(".pitch-btn", container).forEach(x=> x.classList.remove("site-accent"));
+      ev.currentTarget.classList.add("site-accent");
     });
   });
 
