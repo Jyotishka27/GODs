@@ -3,119 +3,323 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GODs Turf — Book Your Slot</title>
+  <title>GODs Turf — Book Your Slot (Mobile Optimized)</title>
+  <meta name="description" content="Mobile-optimized booking widget for GODs Turf" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+
   <style>
     :root{--accent:#16a34a;--muted:#6b7280}
-    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial;}
-    .site-accent{background:var(--accent) !important;color:#fff !important}
-    .site-accent-text{color:var(--accent) !important}
-    .site-accent-border{border-color:var(--accent) !important}
-    .container{max-width:1100px;margin:20px auto;padding:16px}
-    .card{background:#fff;border-radius:12px;padding:16px;border:1px solid #e6e6e6}
-    .flex{display:flex}
-    .items-center{align-items:center}
-    .justify-between{justify-content:space-between}
-    .gap-2{gap:8px}
-    .mb-3{margin-bottom:12px}
-    .rounded-lg{border-radius:8px}
-    .rounded-xl{border-radius:12px}
-    .text-sm{font-size:14px}
-    .text-xs{font-size:12px}
-    .p-3{padding:12px}
-    .p-4{padding:16px}
-    .mt-4{margin-top:16px}
-    .hidden{display:none}
-    /* timeline specific */
-    .timeline-container{overflow-x:auto;padding:8px 4px}
-    .slot-chip{border:1px solid #e5e7eb;background:#f8fafc;padding:8px;border-radius:10px;min-width:84px;margin-right:8px}
-    .slot-chip.site-accent{background:var(--accent);color:#fff;border-color:transparent}
-    .slot-selected{background:var(--accent);color:#fff;border-color:transparent}
+    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+    .hero-height{height:36vh}
+    @media(min-width:768px){.hero-height{height:48vh}}
+
+    /* timeline / ticks */
+    .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:14px}
+    .timeline-grid{display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(110px, min-content);gap:16px;align-items:center}
+
+    /* bigger, tappable slots (desktop default) */
+    .slot-btn{box-sizing:border-box;min-width:110px !important;height:90px !important;padding:14px 12px !important;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border-radius:18px !important;border:1px solid #e5e7eb;font-size:16px !important;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:180px;line-height:1.2}
+    .slot-btn>div{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;text-align:center;padding:0;margin:0}
+    .slot-btn>div:first-child{font-size:15px !important;font-weight:700}
+    .slot-btn>div:last-child{font-size:13px !important;opacity:.85;margin-top:6px !important}
+
+    .slot-past{background:#f8fafc;color:#9ca3af;border-color:#f1f5f9}
+    .slot-blocked{background:#fff1f2;color:#991b1b;border-color:#fee2e2}
+    .slot-partial{background:#fffbeb;color:#92400e;border-color:#fef3c7}
+    .slot-selected{background:var(--accent);color:#fff;border-color:#15803d}
+
+    /* desktop minor compacting for medium screens */
+    @media (min-width:420px) and (max-width:768px) {
+      .timeline-grid{grid-auto-columns:minmax(90px, min-content);gap:12px}
+      .slot-btn{min-width:90px;height:72px;font-size:14px}
+      .slot-btn>div:first-child{font-size:13px}
+      .slot-btn>div:last-child{font-size:11px}
+    }
+
+    /* ---------- MOBILE: VERY COMPACT LAYOUT ---------- */
+    @media (max-width: 420px) {
+      /* reduce hero height */
+      .hero-height { height: 22vh !important; min-height: 100px !important; }
+
+      /* tighten page padding */
+      #book { padding-top: 8px !important; padding-bottom: 12px !important; }
+
+      /* timeline spacing & columns */
+      .timeline-container { padding-top: 6px !important; padding-bottom: 8px !important; }
+      .timeline-grid { gap: 18px !important; grid-auto-columns: minmax(120px, min-content) !important; }
+
+      /* very compact slot buttons */
+      .slot-btn {
+        min-width: 120px !important;
+        height: 110px !important;
+        padding: 12px 10px !important;
+        border-radius: 14px !important;
+        font-size: 16px !important;
+      }
+      .slot-btn>div:first-child{font-size:15px !important}
+      .slot-btn>div:last-child{font-size:13px !important}
+
+      /* SVG pitch: very compact */
+      #pitchSvg { height: 130px !important; max-height: 130px !important; width: 100% !important; }
+
+      /* Hide UI preview image on mobile */
+      #pitchPreviewImg { display: none !important; }
+
+      /* Compact the preview card */
+      #pitchSelectorContainer .rounded-2xl .w-56 { display:none; }
+
+      /* compact paddings for small cards */
+      .p-4 { padding: 8px !important; }
+      .rounded-2xl { border-radius: 10px !important; }
+
+      /* make mobile CTA sticky */
+      .mobile-booking-cta {
+        display:block !important;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 90;
+        padding: 10px 12px;
+        background: rgba(255,255,255,0.98);
+        border-top: 1px solid rgba(0,0,0,0.06);
+        box-shadow: 0 -6px 18px rgba(0,0,0,0.06);
+        -webkit-backdrop-filter: blur(6px);
+        backdrop-filter: blur(6px);
+        padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
+      }
+      .mobile-booking-cta .btn { width: 100%; padding: 12px 16px; font-size: 16px; border-radius: 10px; }
+
+      /* collapse some aside content to save space */
+      aside .p-4 { padding: 8px !important; }
+      #contact .mt-3 { margin-top: 6px !important; }
+    }
+
+    /* helper / summary */
+    .timeline-summary{margin-top:0.5rem}
+
+    /* pitch buttons */
+    #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
+    @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} }
   </style>
 </head>
-<body style="background:#f8fafc;margin:0;">
-  <div class="container">
-    <header class="card mb-3" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div style="width:48px;height:48px;border-radius:50%;background:rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;font-weight:700;">GT</div>
-        <div>
-          <div style="font-weight:700;font-size:18px;">GODs Turf</div>
-          <div style="font-size:13px;color:#6b7280;">Book your slot • Live availability • WhatsApp support</div>
+
+<body class="bg-white text-gray-900">
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a class="flex items-center gap-2" href="#" aria-label="GODs Turf home">
+        <img src="./assets/Logo_RED.jpg" alt="logo" class="h-9 w-9 object-cover rounded" />
+        <span class="font-extrabold tracking-tight site-brand-text">GODs Turf</span>
+      </a>
+      <div class="flex items-center gap-2">
+        <a id="waLink" class="wa-btn" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        <a id="callLinkHeader" class="px-3 py-2 rounded-xl border" href="#">Call</a>
+      </div>
+    </div>
+  </header>
+
+  <section class="relative">
+    <div class="relative">
+      <video class="w-full object-cover hero-height video-fallback" autoplay muted loop playsinline>
+        <source src="./assets/turf_video.mp4" type="video/mp4">
+      </video>
+      <img src="./assets/turf_left.jpg" alt="turf preview" class="w-full object-cover hero-height video-fallback" style="display:none" />
+      <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-black/18 to-black/10 pointer-events-none"></div>
+    </div>
+    <div class="absolute inset-0 flex items-center">
+      <div class="max-w-6xl mx-auto px-4">
+        <h1 class="text-white text-2xl sm:text-3xl md:text-4xl font-extrabold leading-tight">Play on premium floodlit turf</h1>
+        <p class="text-white/90 mt-3 max-w-2xl text-sm sm:text-base">Live availability, instant confirmation and flexible reschedules.</p>
+        <a href="#book" class="inline-block mt-4 touch-cta px-5 py-3 rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700">Book a slot</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="book" class="max-w-6xl mx-auto px-4 py-6">
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="md:col-span-2 space-y-4">
+        <div class="p-4 border rounded-2xl bg-white">
+          <label for="date" class="text-xs text-gray-600 block mb-2">Choose date</label>
+          <input id="date" type="date" class="w-full md:w-auto border rounded-xl px-3 py-2" />
+          <div id="pitchSelectorContainer" class="mt-4"></div>
+
+          <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
+            <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
+              <div class="text-xs text-gray-500">Selected pitch</div>
+              <div id="selectedPitch" class="font-medium">—</div>
+            </div>
+            <div class="px-3 py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
+              <div class="text-xs text-gray-500">Price</div>
+              <div id="selectedPrice" class="font-medium">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-4 border rounded-2xl bg-white">
+          <h3 class="font-semibold mb-3">Available slots</h3>
+          <div id="slotTabs" class="mb-3"></div>
+
+          <div id="slotPanel" class="timeline-container rounded-md" role="region" aria-live="polite"></div>
+
+          <!-- summary is injected by JS; removed static duplicate hint -->
+        </div>
+
+        <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
+          <h4 class="font-semibold mb-1">Booking created</h4>
+          <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
+          <div class="grid sm:grid-cols-2 gap-x-6 gap-y-1 mt-3 text-sm">
+            <div><span class="text-gray-500">Booking ID:</span> <span id="c-id" class="font-mono"></span></div>
+            <div><span class="text-gray-500">When:</span> <span id="c-when"></span></div>
+            <div><span class="text-gray-500">Court:</span> <span id="c-court"></span></div>
+            <div><span class="text-gray-500">Amount:</span> <span id="c-amount"></span></div>
+          </div>
+          <div class="mt-3 flex flex-col sm:flex-row gap-2">
+            <a id="confirmWA" target="_blank" class="px-4 py-2 rounded-xl bg-emerald-600 text-white text-center">Message on WhatsApp</a>
+            <a href="#rules" class="px-4 py-2 rounded-xl border text-center">See rules</a>
+          </div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button style="background:transparent;border:1px solid #e5e7eb;padding:8px 10px;border-radius:8px;">Directions</button>
-        <a href="tel:+917003396909" style="background:#fff;border-radius:8px;padding:8px 10px;border:1px solid #e5e7eb;color:var(--accent);text-decoration:none;">+91 70033 96909</a>
-      </div>
-    </header>
 
-    <!-- Main layout -->
-    <main class="flex" style="gap:16px;">
-      <!-- Left column -->
-      <div style="flex:2;display:flex;flex-direction:column;gap:16px;">
-        <!-- Date input (existing) hidden, keep for compatibility -->
-        <div class="card" style="display:flex;flex-direction:column;gap:12px;">
-          <label class="text-sm">Choose date</label>
-          <input id="date" type="date" style="padding:10px;border-radius:8px;border:1px solid #e5e7eb;width:160px;" />
-          <div id="dateRow"></div>
+      <aside class="space-y-4">
+        <div class="p-4 border rounded-2xl bg-white">
+          <h3 class="font-semibold">Facilities & Amenities</h3>
+          <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
+          <div class="mt-4 text-sm text-gray-600">
+            <p><strong>Hours:</strong> 24 × 7</p>
+            <p><strong>Buffer:</strong> 10 mins between slots</p>
+            <p><strong>Peak:</strong> 5 PM – 10 PM</p>
+          </div>
         </div>
 
-        <!-- Pitch selector container will be inserted by app.js -->
-        <div id="pitchSelectorContainer" class="card"></div>
-
-        <!-- Slots panel -->
-        <div id="slotsArea" class="card">
-          <h3 style="margin:0 0 8px 0;font-weight:600;">Available slots</h3>
-          <div id="slotTabs"></div>
-          <div id="slotPanel" style="margin-top:12px;"></div>
-        </div>
-      </div>
-
-      <!-- Right column -->
-      <aside style="flex:1;">
-        <div class="card">
-          <div id="selectedPitch">Selected pitch</div>
-          <div id="selectedPrice" style="margin-top:8px;font-weight:700;">₹0</div>
-          <div style="margin-top:12px;font-size:12px;color:#6b7280;">Tip: Use WhatsApp button to message admin for special requests.</div>
+        <div class="p-4 border rounded-2xl bg-white" id="contact">
+          <h3 class="font-semibold">Contact</h3>
+          <p class="text-sm mt-2"><span id="addr">Near City Sports Complex, New Town, Kolkata</span></p>
+          <div class="mt-3 space-y-2 text-sm">
+            <a id="emailLink" class="block underline" href="mailto:godsturf@gmail.com">godsturf@gmail.com</a>
+            <a id="callLink" class="block underline" href="tel:+917003396909">Call +91-70033-96909</a>
+          </div>
         </div>
       </aside>
-    </main>
+    </div>
+  </section>
 
-    <!-- confirmation card -->
-    <div id="confirmCard" class="card hidden" style="margin-top:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <div id="c-id" style="font-weight:700;"></div>
-          <div id="c-when" class="text-sm"></div>
-          <div id="c-court" class="text-sm"></div>
-        </div>
-        <div id="c-amount" style="font-weight:700;"></div>
+  <section id="rules" class="max-w-6xl mx-auto px-4 pb-8">
+    <div class="p-4 border rounded-2xl bg-white">
+      <h3 class="font-semibold mb-2">Rules</h3>
+      <ul id="rulesList" class="space-y-2 text-sm"></ul>
+    </div>
+  </section>
+
+  <!-- modal -->
+  <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
+    <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
+      <div class="flex items-center justify-between mb-2">
+        <h3 id="m-title" class="font-semibold">Booking</h3>
+        <button id="closeModal" class="text-gray-500 hover:text-black" aria-label="Close dialog">✕</button>
+      </div>
+      <p id="m-when" class="text-sm text-gray-600 mb-2"></p>
+      <p class="text-sm mb-2">Amount: <span id="m-price" class="font-semibold"></span></p>
+      <div class="space-y-2">
+        <input id="m-name" class="w-full border rounded-xl px-3 py-2" placeholder="Your Name"/>
+        <input id="m-phone" class="w-full border rounded-xl px-3 py-2" placeholder="Phone with country code (e.g., +91...)"/>
+        <input id="m-coupon" class="w-full border rounded-xl px-3 py-2" placeholder="Promo code (optional)"/>
+        <textarea id="m-notes" class="w-full border rounded-xl px-3 py-2" placeholder="Notes (optional)"></textarea>
+      </div>
+      <div class="flex flex-col sm:flex-row items-center gap-2 justify-end mt-3">
+        <button id="m-cancel" class="w-full sm:w-auto px-3 py-2 rounded-xl border">Cancel</button>
+        <button id="m-confirm" class="w-full sm:w-auto px-3 py-2 rounded-xl bg-emerald-600 text-white">Confirm</button>
       </div>
     </div>
   </div>
 
-  <!-- modal (hidden by default) -->
-  <div id="modal" class="hidden" style="position:fixed;left:0;right:0;top:0;bottom:0;display:flex;align-items:flex-end;justify-content:center;padding:20px;z-index:9999;">
-    <div style="background:white;border-radius:12px;padding:16px;width:100%;max-width:520px;box-shadow:0 6px 24px rgba(2,6,23,0.08);">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
-        <div id="m-title" style="font-weight:700;">Booking</div>
-        <button id="closeModal" style="background:transparent;border:0;font-size:18px;">✕</button>
-      </div>
-      <div id="m-when" style="margin-top:8px;color:#6b7280;"></div>
-      <div id="m-price" style="margin-top:8px;font-weight:700;"></div>
-
-      <div style="margin-top:12px;">
-        <input id="m-name" placeholder="Your name" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:8px;">
-        <input id="m-phone" placeholder="+91 9xxxxxxxxx" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:8px;">
-        <textarea id="m-notes" placeholder="Notes (optional)" style="width:100%;padding:10px;border-radius:8px;border:1px solid #e5e7eb;margin-bottom:8px;"></textarea>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-top:12px;">
-        <button id="m-confirm" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:0;">Confirm</button>
-        <button id="m-cancel" style="flex:1;padding:10px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;">Cancel</button>
+  <div class="mobile-booking-cta hidden" id="mobileBookingCta" role="region" aria-live="polite">
+    <div class="max-w-6xl mx-auto px-4">
+      <div class="flex gap-3">
+        <button id="bookBtnMobile" class="btn bg-emerald-600 text-white px-4 py-2 rounded-lg w-full">Book a slot</button>
       </div>
     </div>
   </div>
+
+  <script>
+    (function(){
+      const dateInput = document.getElementById('date');
+      if (dateInput) {
+        const today = new Date();
+        const pad = n => String(n).padStart(2,'0');
+        const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        dateInput.min = iso(today);
+        const maxDays = 90;
+        const maxDate = new Date(Date.now() + maxDays*24*60*60*1000);
+        dateInput.max = iso(maxDate);
+        dateInput.value = iso(today);
+      }
+      const phone = "+917003396909";
+      const wa = document.getElementById("waLink");
+      const callH = document.getElementById("callLinkHeader");
+      const callF = document.getElementById("callLink");
+      if(wa) wa.href = `https://wa.me/${phone.replace(/\+/g,'')}`;
+      if(callH) callH.href = `tel:${phone}`;
+      if(callF) callF.href = `tel:${phone}`;
+      const email = document.getElementById('emailLink');
+      if (email && !email.href) email.href = 'mailto:godsturf@gmail.com';
+    })();
+
+    (function(){
+      const modal = document.getElementById('modal');
+      const closeBtn = document.getElementById('closeModal');
+      const cancelBtn = document.getElementById('m-cancel');
+      function hideModal(){ if(modal) modal.classList.add('hidden'); document.body.style.overflow = ''; }
+      if(closeBtn) closeBtn.addEventListener('click', hideModal);
+      if(cancelBtn) cancelBtn.addEventListener('click', hideModal);
+      document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && modal && !modal.classList.contains('hidden')) hideModal(); });
+    })();
+  </script>
 
   <script type="module" src="./scripts/app.js"></script>
+
+  <footer class="border-t mt-8">
+    <div class="max-w-6xl mx-auto px-4 py-6 text-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <span>© <span id="year"></span> GODs Turf</span>
+      <div class="space-x-4">
+        <a href="./terms.html" class="hover:text-emerald-600">Terms</a>
+        <a href="./privacy.html" class="hover:text-emerald-600">Privacy</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+
+  <script>
+    (function() {
+      function updateMobileCta() {
+        const cta = document.getElementById('mobileBookingCta');
+        if (!cta) return;
+        if (window.innerWidth <= 420) {
+          cta.classList.remove('hidden');
+        } else {
+          cta.classList.add('hidden');
+        }
+      }
+      window.addEventListener('resize', updateMobileCta);
+      updateMobileCta();
+
+      const mobileBook = document.getElementById('bookBtnMobile');
+      if (mobileBook) {
+        mobileBook.addEventListener('click', () => {
+          const modal = document.getElementById('modal');
+          if (modal) {
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+          } else {
+            const book = document.getElementById('book');
+            if (book) book.scrollIntoView({ behavior: 'smooth' });
+          }
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
