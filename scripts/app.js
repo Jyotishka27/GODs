@@ -548,33 +548,55 @@ function renderTimeChips(buckets, occupancy) {
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
-    addTap(btn, () => {
-      if (btn.disabled) {
-        if (state === 'blocked') openWishlistModal(slot, null);
-        return;
-      }
-      const sid = slot.id;
-      if (timelineSelection.has(sid)) timelineSelection.delete(sid);
-      else timelineSelection.add(sid);
-      normalizeSelectionToContiguous();
-
-      grid.querySelectorAll('button[data-slot-id]').forEach(b => {
-        const id = b.getAttribute('data-slot-id');
-        if (timelineSelection.has(id)) {
-          b.classList.remove('bg-white','slot-partial');
-          b.classList.add('slot-selected');
-        } else {
-          b.classList.remove('slot-selected');
-          if (!b.disabled) b.classList.add('bg-white');
+        btn.addEventListener('click', (e) => {
+        e.preventDefault();
+  
+        if (btn.disabled) {
+          if (state === 'blocked') {
+            // allow wishlist on blocked slots
+            openWishlistModal(slot, null);
+          }
+          return;
         }
+  
+        const sid = slot.id;
+  
+        // toggle this slot
+        if (timelineSelection.has(sid)) {
+          timelineSelection.delete(sid);
+        } else {
+          timelineSelection.add(sid);
+        }
+  
+        // keep selection contiguous
+        normalizeSelectionToContiguous();
+  
+        // re-paint all buttons in this grid
+        grid.querySelectorAll('button[data-slot-id]').forEach(b => {
+          const id = b.getAttribute('data-slot-id');
+  
+          if (timelineSelection.has(id)) {
+            b.classList.remove('bg-white', 'slot-partial');
+            b.classList.add('slot-selected');
+          } else {
+            b.classList.remove('slot-selected');
+            if (!b.disabled) {
+              b.classList.add('bg-white');
+            }
+          }
+        });
+  
+        // update summary card
+        updateSummaryFromSelection();
       });
-
-      updateSummaryFromSelection();
+  
+  
+        updateSummaryFromSelection();
+      });
+  
+      grid.appendChild(btn);
     });
-
-    grid.appendChild(btn);
-  });
-}
+  }
 
 function renderCourtsGrid(occupancy) {
   if (!courtsGrid) return;
