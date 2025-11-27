@@ -589,11 +589,7 @@ function renderTimeChips(buckets, occupancy) {
         // update summary card
         updateSummaryFromSelection();
       });
-  
-  
-        updateSummaryFromSelection();
-      });
-  
+    
       grid.appendChild(btn);
     });
   }
