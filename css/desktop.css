@@ -2,8 +2,11 @@
 
 :root {
   --accent: #16a34a;
+  --accent-dark: #15803d;
   --muted: #6b7280;
 }
+
+/* ===== Base ===== */
 
 body {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
@@ -22,76 +25,94 @@ body {
   }
 }
 
-/* timeline / time chips */
+/* ===== TIMELINE / DESKTOP TIME CHIPS ===== */
+
 .timeline-container {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   padding-top: 0.5rem;
-  padding-bottom: 14px;
-  scroll-snap-type: x mandatory;
+  padding-bottom: 16px;
+
+  /* Desktop fix: prevent scroll snapping interfering with clicks */
+  scroll-snap-type: none;
 }
 
 .timeline-grid {
   display: inline-grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(110px, min-content);
-  gap: 16px;
+  grid-auto-columns: minmax(120px, max-content);
+  gap: 18px;
   align-items: center;
+  padding-bottom: 2px;
 }
 
+/* ---- SLOT BUTTON (Chip) ---- */
 .slot-btn {
   box-sizing: border-box;
-  min-width: 110px !important;
-  height: 90px !important;
-  padding: 14px 12px !important;
-  display: inline-flex;
+  user-select: none;
+  cursor: pointer;
+
+  min-width: 120px;
+  height: 95px;
+
+  padding: 16px 12px;
+  border-radius: 20px;
+  border: 1px solid #e5e7eb;
+
+  background: #ffffff;
+
+  display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 18px !important;
-  border: 1px solid #e5e7eb;
-  font-size: 16px !important;
-  background: #fff;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  max-width: 180px;
-  line-height: 1.2;
-  scroll-snap-align: center;
-}
 
-.slot-btn > div {
-  display: block;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  width: 100%;
   text-align: center;
-  padding: 0;
-  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  transition: all 0.18s ease;
 }
 
+.slot-btn:hover:not(.slot-selected):not(.slot-blocked):not(.slot-past) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34,197,94,0.15);
+}
+
+/* label + sublabel */
 .slot-btn > div:first-child {
-  font-size: 15px !important;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .slot-btn > div:last-child {
-  font-size: 13px !important;
-  opacity: 0.85;
-  margin-top: 6px !important;
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+/* ---- STATES ---- */
+
+.slot-selected {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent-dark) !important;
+  box-shadow: 0 0 0 2px rgba(16,185,129,0.3);
 }
 
 .slot-past {
   background: #f8fafc;
   color: #9ca3af;
-  border-color: #f1f5f9;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .slot-blocked {
   background: #fff1f2;
   color: #991b1b;
   border-color: #fee2e2;
+  cursor: not-allowed;
 }
 
 .slot-partial {
@@ -100,36 +121,36 @@ body {
   border-color: #fef3c7;
 }
 
-.slot-selected {
-  background: var(--accent);
-  color: #fff;
-  border-color: #15803d;
-}
-
-/* tablet: slightly smaller chips */
+/* ===== Tablet optimizations ===== */
 @media (min-width: 420px) and (max-width: 768px) {
   .timeline-grid {
-    grid-auto-columns: minmax(90px, min-content);
-    gap: 12px;
+    grid-auto-columns: minmax(100px, max-content);
+    gap: 14px;
   }
+
   .slot-btn {
-    min-width: 90px;
-    height: 72px;
-    font-size: 14px;
+    min-width: 100px;
+    height: 80px;
+    padding: 12px;
+    border-radius: 16px;
   }
+
   .slot-btn > div:first-child {
-    font-size: 13px;
+    font-size: 14px;
   }
   .slot-btn > div:last-child {
     font-size: 11px;
   }
 }
 
+/* ===== Timeline summary (desktop alignment) ===== */
 .timeline-summary {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
 }
 
+/* ===== Pitch Selector (desktop) ===== */
 #pitchSelectorContainer .pitch-btn {
   border-radius: 9999px;
-  padding: 0.4rem 0.7rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 15px;
 }
