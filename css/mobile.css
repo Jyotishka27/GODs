@@ -270,3 +270,96 @@ input, textarea, select, button {
   border: 1px solid #f0f0f0;
   margin-bottom: 10px;
 }
+
+/* ---------- MOBILE OVERRIDES: apply last so they win ---------- */
+/* Make main content use full width on small screens */
+@media (max-width: 640px) {
+  /* If you're using utility classes like max-w-6xl / mx-auto, override them */
+  .max-w-6xl, .container, .site-wrapper, .page-wrapper, .main-container {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* If card sections are constrained by inner .px-4 / .px-6, reduce them */
+  .px-4, .px-6, .container .p-4 {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  /* Date pills row: make it horizontally scrollable and remove huge centered gap */
+  .date-picker-row, .date-tabs, #datePicker, .choose-date-row {
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 2px !important;
+    scroll-snap-type: x proximity;
+  }
+  .date-picker-row .pill, .date-tabs .pill, .date-btn {
+    flex: 0 0 auto;
+    min-width: 64px;
+    padding: 6px 10px;
+    scroll-snap-align: start;
+  }
+
+  /* timeline chips: slightly larger & left aligned grid so first chip isn't cut off */
+  .timeline-container {
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+  }
+  .timeline-grid {
+    grid-auto-columns: minmax(88px, 140px) !important;
+    gap: 14px !important;
+    padding-left: 6px !important;
+  }
+  .slot-btn {
+    min-width: 88px !important;
+    padding: 10px 10px !important;
+    border-radius: 12px !important;
+  }
+
+  /* time-of-day tabs: make them scrollable if they overflow */
+  #timeBucketTabs {
+    overflow-x: auto;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(120px, 1fr);
+    gap: 8px !important;
+  }
+
+  /* reduce big top hero margin to keep the fold visible */
+  .hero-height {
+    height: 20vh !important;
+    min-height: 90px !important;
+  }
+
+  /* booking summary card: keep bottom CTA visible by adding extra bottom padding in the page */
+  body {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 84px);
+  }
+
+  /* make section cards full width and remove extra side gutters */
+  .section-card, aside, .booking-section, .amenities-section {
+    width: 100% !important;
+    box-sizing: border-box;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  /* keep pitch buttons comfortable height for touch */
+  #pitchSelectorContainer .pitch-btn {
+    padding: 12px 10px !important;
+    font-size: 15px !important;
+  }
+}
+
+/* small polish: avoid scrollbar jump by ensuring consistent overflow behaviour */
+.timeline-container::-webkit-scrollbar,
+.date-picker-row::-webkit-scrollbar {
+  height: 8px;
+}
