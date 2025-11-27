@@ -1,0 +1,135 @@
+/* desktop.css - Optimized for screens ≥ 641px */
+
+:root {
+  --accent: #16a34a;
+  --muted: #6b7280;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.hero-height {
+  height: 36vh;
+}
+
+@media (min-width: 768px) {
+  .hero-height {
+    height: 48vh;
+  }
+}
+
+/* timeline / time chips */
+.timeline-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 0.5rem;
+  padding-bottom: 14px;
+  scroll-snap-type: x mandatory;
+}
+
+.timeline-grid {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(110px, min-content);
+  gap: 16px;
+  align-items: center;
+}
+
+.slot-btn {
+  box-sizing: border-box;
+  min-width: 110px !important;
+  height: 90px !important;
+  padding: 14px 12px !important;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px !important;
+  border: 1px solid #e5e7eb;
+  font-size: 16px !important;
+  background: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 180px;
+  line-height: 1.2;
+  scroll-snap-align: center;
+}
+
+.slot-btn > div {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: center;
+  padding: 0;
+  margin: 0;
+}
+
+.slot-btn > div:first-child {
+  font-size: 15px !important;
+  font-weight: 700;
+}
+
+.slot-btn > div:last-child {
+  font-size: 13px !important;
+  opacity: 0.85;
+  margin-top: 6px !important;
+}
+
+.slot-past {
+  background: #f8fafc;
+  color: #9ca3af;
+  border-color: #f1f5f9;
+}
+
+.slot-blocked {
+  background: #fff1f2;
+  color: #991b1b;
+  border-color: #fee2e2;
+}
+
+.slot-partial {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fef3c7;
+}
+
+.slot-selected {
+  background: var(--accent);
+  color: #fff;
+  border-color: #15803d;
+}
+
+/* tablet: slightly smaller chips */
+@media (min-width: 420px) and (max-width: 768px) {
+  .timeline-grid {
+    grid-auto-columns: minmax(90px, min-content);
+    gap: 12px;
+  }
+  .slot-btn {
+    min-width: 90px;
+    height: 72px;
+    font-size: 14px;
+  }
+  .slot-btn > div:first-child {
+    font-size: 13px;
+  }
+  .slot-btn > div:last-child {
+    font-size: 11px;
+  }
+}
+
+.timeline-summary {
+  margin-top: 0.5rem;
+}
+
+#pitchSelectorContainer .pitch-btn {
+  border-radius: 9999px;
+  padding: 0.4rem 0.7rem;
+}
