@@ -22,6 +22,11 @@
         <img src="./assets/Logo_RED.jpg" alt="logo" class="h-9 w-9 object-cover rounded" />
         <span class="font-extrabold tracking-tight site-brand-text">GODs Turf</span>
       </a>
+      <nav class="hidden md:flex items-center gap-6">
+        <a href="#book" class="hover:text-emerald-600">Book</a>
+        <a href="#contact" class="hover:text-emerald-600">Contact</a>
+        <a href="#gallery" class="hover:text-emerald-600">Gallery</a>
+      </nav>
       <div class="flex items-center gap-2">
         <a id="waLink" class="wa-btn px-3 py-2 rounded-xl border border-emerald-600 text-emerald-700" href="#" target="_blank" rel="noopener">WhatsApp</a>
         <a id="callLinkHeader" class="px-3 py-2 rounded-xl border" href="#">Call</a>
@@ -183,10 +188,10 @@
     </div>
   </div>
 
-  <div class="mobile-booking-cta hidden" id="mobileBookingCta" role="region" aria-live="polite">
+  <div class="mobile-ing-cta hidden" id="mobileingCta" role="region" aria-live="polite">
     <div class="max-w-6xl mx-auto px-4">
       <div class="flex gap-3">
-        <button id="bookBtnMobile" class="btn bg-emerald-600 text-white px-4 py-2 rounded-lg w-full">Book a slot</button>
+        <button id="BtnMobile" class="btn bg-emerald-600 text-white px-4 py-2 rounded-lg w-full"> a slot</button>
       </div>
     </div>
   </div>
@@ -226,7 +231,7 @@
     })();
   </script>
 
-  <!-- main booking logic (unchanged file path) -->
+  <!-- main ing logic (unchanged file path) -->
   <script type="module" src="./scripts/app.js"></script>
 
   <footer class="border-t mt-8">
@@ -244,7 +249,7 @@
   <script>
     (function() {
       function updateMobileCta() {
-        const cta = document.getElementById('mobileBookingCta');
+        const cta = document.getElementById('mobileingCta');
         if (!cta) return;
         if (window.innerWidth <= 420) {
           cta.classList.remove('hidden');
