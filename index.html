@@ -9,85 +9,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <style>
-    :root{--accent:#16a34a;--muted:#6b7280}
-    body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;margin:0;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
-    .hero-height{height:36vh}
-    @media(min-width:768px){.hero-height{height:48vh}}
-
-    /* timeline / ticks (still used for time chips if needed) */
-    .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:14px}
-    .timeline-grid{display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(110px, min-content);gap:16px;align-items:center}
-
-    .slot-btn{box-sizing:border-box;min-width:110px !important;height:90px !important;padding:14px 12px !important;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border-radius:18px !important;border:1px solid #e5e7eb;font-size:16px !important;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:180px;line-height:1.2}
-    .slot-btn>div{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;text-align:center;padding:0;margin:0}
-    .slot-btn>div:first-child{font-size:15px !important;font-weight:700}
-    .slot-btn>div:last-child{font-size:13px !important;opacity:.85;margin-top:6px !important}
-
-    .slot-past{background:#f8fafc;color:#9ca3af;border-color:#f1f5f9}
-    .slot-blocked{background:#fff1f2;color:#991b1b;border-color:#fee2e2}
-    .slot-partial{background:#fffbeb;color:#92400e;border-color:#fef3c7}
-    .slot-selected{background:var(--accent);color:#fff;border-color:#15803d}
-
-    @media (min-width:420px) and (max-width:768px) {
-      .timeline-grid{grid-auto-columns:minmax(90px, min-content);gap:12px}
-      .slot-btn{min-width:90px;height:72px;font-size:14px}
-      .slot-btn>div:first-child{font-size:13px}
-      .slot-btn>div:last-child{font-size:11px}
-    }
-
-    @media (max-width: 420px) {
-      .hero-height { height: 22vh !important; min-height: 100px !important; }
-
-      #book { padding-top: 8px !important; padding-bottom: 12px !important; }
-
-      .timeline-container { padding-top: 6px !important; padding-bottom: 8px !important; }
-      .timeline-grid { gap: 18px !important; grid-auto-columns: minmax(120px, min-content) !important; }
-
-      .slot-btn {
-        min-width: 120px !important;
-        height: 110px !important;
-        padding: 12px 10px !important;
-        border-radius: 14px !important;
-        font-size: 16px !important;
-      }
-      .slot-btn>div:first-child{font-size:15px !important}
-      .slot-btn>div:last-child{font-size:13px !important}
-
-      #pitchSvg { height: 130px !important; max-height: 130px !important; width: 100% !important; }
-      #pitchPreviewImg { display: none !important; }
-      #pitchSelectorContainer .rounded-2xl .w-56 { display:none; }
-
-      .p-4 { padding: 8px !important; }
-      .rounded-2xl { border-radius: 10px !important; }
-
-      .mobile-booking-cta {
-        display:block !important;
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        z-index: 90;
-        padding: 10px 12px;
-        background: rgba(255,255,255,0.98);
-        border-top: 1px solid rgba(0,0,0,0.06);
-        box-shadow: 0 -6px 18px rgba(0,0,0,0.06);
-        -webkit-backdrop-filter: blur(6px);
-        backdrop-filter: blur(6px);
-        padding-bottom: calc(env(safe-area-inset-bottom) + 10px);
-      }
-      .mobile-booking-cta .btn { width: 100%; padding: 12px 16px; font-size: 16px; border-radius: 10px; }
-
-      aside .p-4 { padding: 8px !important; }
-      #contact .mt-3 { margin-top: 6px !important; }
-    }
-
-    .timeline-summary{margin-top:0.5rem}
-
-    #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
-    @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} }
-  </style>
+  
+  <link rel="stylesheet" href="css/mobile.css" media="only screen and (max-width: 640px)">
+  <link rel="stylesheet" href="css/desktop.css" media="only screen and (min-width: 641px)">
+  
 </head>
 
 <body class="bg-white text-gray-900">
