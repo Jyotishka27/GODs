@@ -1,4 +1,4 @@
-// scripts/app.js (mobile-optimized timeline multi-select, 30-min ticks, min 60 min booking)
+// scripts/app.js (updated for new UI: week strip, time buckets, time chips, duration, courts grid, summary)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -51,15 +51,11 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
-/* Improved addTap: use touchstart on touch devices, fallback to click.
-   This avoids duplicate events (touch + click) and makes interactions snappier. */
 function addTap(el, handler) {
   if (!el) return;
   const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
   if (isTouch) {
-    // Use touchstart for instant response on touch devices.
     el.addEventListener('touchstart', function touchHandler(e){
-      // prevent duplicate click event
       e.preventDefault();
       try { handler(e); } catch(err){ console.error(err); }
     }, { passive: false });
@@ -73,12 +69,12 @@ function addTap(el, handler) {
 /* ---------- debug: surface runtime errors into UI ---------- */
 window.addEventListener('error', ev => {
   console.error('Runtime error:', ev.error || ev.message || ev);
-  const p = document.getElementById('slotPanel');
+  const p = document.getElementById('timeChips');
   if (p) p.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fee2e2;color:#991b1b">Error: ${String(ev.error?.message || ev.message || ev).slice(0,300)}</div>`;
 });
 window.addEventListener('unhandledrejection', ev => {
   console.error('Unhandled rejection:', ev.reason);
-  const p = document.getElementById('slotPanel');
+  const p = document.getElementById('timeChips');
   if (p) p.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fff7ed;color:#92400e">Error: ${String(ev.reason).slice(0,300)}</div>`;
 });
 
@@ -115,22 +111,20 @@ function generate30MinSlots() {
   }
   return slots;
 }
-const ALL_SLOTS = generate30MinSlots(); // 48 slots
+const ALL_SLOTS = generate30MinSlots();
 const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {});
 
 const BUFFER_MIN = 10;
-const MIN_BOOKING_MINS = 60; // min 60 minutes
+const MIN_BOOKING_MINS = 60;
 
-/* ---------- IMPORTANT: quoted keys (fix previously broken syntax) ---------- */
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
 const COURT_META = {
-  "5A": { type: "half", label: "Half Ground Left", dims: "55×90" },
-  "5B": { type: "half", label: "Half Ground Right", dims: "55×90" },
+  "5A": { type: "half", label: "Half Ground — Left", dims: "55×90" },
+  "5B": { type: "half", label: "Half Ground — Right", dims: "55×90" },
   "7A": { type: "full", label: "Full Ground", dims: "110×90" },
-  "CRK": { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" }
+  "CRK": { type: "cricket", label: "Cricket Pitch", dims: "110×90" }
 };
 
-/* ---------- normalization & meta helpers ---------- */
 function normalizedKey(val) {
   if (val === undefined || val === null) return "";
   let v = String(val).trim();
@@ -149,18 +143,16 @@ function normalizedKey(val) {
 function metaFor(courtId) {
   const key = normalizedKey(courtId);
   if (COURT_META[key]) return COURT_META[key];
-  if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground Left", dims: "55×90" };
-  if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground Right", dims: "55×90" };
+  if (/5A|LEFT/.test(key)) return { type: "half", label: "Half Ground — Left", dims: "55×90" };
+  if (/5B|RIGHT/.test(key)) return { type: "half", label: "Half Ground — Right", dims: "55×90" };
   if (/7A|FULL/.test(key)) return { type: "full", label: "Full Ground", dims: "110×90" };
-  if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Full Ground (Cricket)", dims: "110×90" };
+  if (/CRK|CRICKET/.test(key)) return { type: "cricket", label: "Cricket Pitch", dims: "110×90" };
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
-/* ---------- expand bookings to 30-min slots ---------- */
 function expandBookingToSlots(bookingRangeId) {
   if (!bookingRangeId || typeof bookingRangeId !== "string") return [];
   const [start, end] = bookingRangeId.split("-");
-  // find index by start
   const startIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[0] === start);
   const endIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[1] === end);
   if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
@@ -168,7 +160,6 @@ function expandBookingToSlots(bookingRangeId) {
     for (let i = startIdx; i <= endIdx; i++) out.push(ALL_SLOTS[i].id);
     return out;
   }
-  // fallback compute by minutes
   const sH = Number(start.split(":")[0]), sM = Number(start.split(":")[1]);
   const eH = Number(end.split(":")[0]), eM = Number(end.split(":")[1]);
   const sT = sH * 60 + sM;
@@ -183,7 +174,6 @@ function expandBookingToSlots(bookingRangeId) {
   return out;
 }
 
-/* ---------- occupancy map (per 30-min slot) ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   ALL_SLOTS.forEach(s => { m[s.id] = { halves: new Set(), full: false, cricket: false, bookings: [] }; });
@@ -200,7 +190,6 @@ function computeSlotOccupancy(bookingDocs) {
       const copy = { ...b, court: courtId };
       s.bookings.push(copy);
       if ((b.status || "").toLowerCase() === "cancelled") return;
-      // ---- FIX: only add halves if we have a normalized courtId ----
       if (meta.type === "half") {
         if (courtId) s.halves.add(courtId);
       } else if (meta.type === "full") {
@@ -213,7 +202,6 @@ function computeSlotOccupancy(bookingDocs) {
   return m;
 }
 
-/* ---------- range availability check ---------- */
 function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   const [start] = startSlotId.split("-");
   const [hh, mm] = start.split(":").map(Number);
@@ -222,6 +210,7 @@ function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   const end = `${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;
   return `${start}-${end}`;
 }
+
 function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCourt) {
   if (!startSlotId || !targetCourt) return { allowed: false, reason: "Invalid args" };
   const rangeId = makeRangeIdFromStartAndDuration(startSlotId, durationMins);
@@ -235,10 +224,8 @@ function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCour
     if (tmeta.type === "half") {
       if (occ.full) return { allowed: false, reason: `Blocked — full ground at ${sid}` };
       if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
-      // if both halves taken -> blocked
       if (occ.halves.size >= 2) return { allowed: false, reason: `Both halves booked at ${sid}` };
-      // if this same half already booked by someone else -> blocked
-      if (targetKey && occ.halves.has(targetKey)) return { allowed: false, reason: `You already booked this half at ${sid}` };
+      if (targetKey && occ.halves.has(targetKey)) return { allowed: false, reason: `This half already booked at ${sid}` };
     } else if (tmeta.type === "full") {
       if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — half booked at ${sid}` };
       if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
@@ -254,7 +241,6 @@ function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCour
   return { allowed: true, reason: null };
 }
 
-/* ---------- prevent past ---------- */
 function isSlotInPast(slotId, dateISO) {
   if (!slotId || !dateISO) return false;
   const [start] = slotId.split("-");
@@ -266,10 +252,8 @@ function isSlotInPast(slotId, dateISO) {
   return slotDate.getTime() <= Date.now();
 }
 
-/* ---------- DOM refs (defensive) ---------- */
+/* ---------- DOM refs ---------- */
 const dateInput = $("#date");
-const slotTabs = $("#slotTabs");
-const slotPanel = $("#slotPanel");
 const modal = $("#modal");
 const closeModal = $("#closeModal");
 const mTitle = $("#m-title");
@@ -288,15 +272,30 @@ const ccourt = $("#c-court");
 const camount = $("#c-amount");
 const confirmWA = $("#confirmWA");
 
+// NEW refs for updated UI
+const weekStrip      = document.getElementById('weekStrip');
+const timeBucketTabs = document.getElementById('timeBucketTabs');
+const timeChips      = document.getElementById('timeChips');
+const durationDisplay = document.getElementById('durationDisplay');
+const durationMinus   = document.getElementById('durationMinus');
+const durationPlus    = document.getElementById('durationPlus');
+const courtsGrid      = document.getElementById('courtsGrid');
+const summaryDate     = document.getElementById('summaryDate');
+const summaryStart    = document.getElementById('summaryStart');
+const summaryEnd      = document.getElementById('summaryEnd');
+const summaryCourt    = document.getElementById('summaryCourt');
+const summaryDuration = document.getElementById('summaryDuration');
+const summaryTotal    = document.getElementById('summaryTotal');
+const summaryBookBtn  = document.getElementById('summaryBookBtn');
+
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey("5A");
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
 let selectedBucket = "morning";
+let selectedDurationMins = MIN_BOOKING_MINS;
 let modalMode = "booking";
 let preferredBookingId = null;
-
-// timeline selections: set of slotIds user selected
 let timelineSelection = new Set();
 
 /* ---------- static UI ---------- */
@@ -357,7 +356,6 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- buckets ---------- */
 function bucketSlots(slots) {
   const buckets = { midnight: [], morning: [], afternoon: [], evening: [] };
   slots.forEach(s => {
@@ -370,326 +368,56 @@ function bucketSlots(slots) {
   return buckets;
 }
 
+/* ---------- Week strip ---------- */
+function buildWeekStrip(baseDateISO) {
+  if (!weekStrip) return;
+  const base = baseDateISO ? new Date(baseDateISO) : new Date();
+  weekStrip.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    const iso = fmtDateISO(d);
+    const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    const btn = document.createElement('button');
+    const isActive = iso === selectedDate;
+    btn.className = [
+      'px-3','py-2','rounded-xl','text-sm','border',
+      isActive ? 'bg-emerald-600 text-white' : 'bg-white text-gray-800'
+    ].join(' ');
+    btn.textContent = label;
+    addTap(btn, () => {
+      selectedDate = iso;
+      if (dateInput) dateInput.value = iso;
+      hide(confirmCard);
+      timelineSelection = new Set();
+      renderAll();
+      buildWeekStrip(selectedDate);
+    });
+    weekStrip.appendChild(btn);
+  }
+}
+
+/* ---------- Duration control ---------- */
+function syncDurationDisplay() {
+  if (!durationDisplay) return;
+  const hrs = selectedDurationMins / 60;
+  durationDisplay.textContent = hrs + ' hr' + (hrs > 1 ? 's' : '');
+}
+
+durationMinus?.addEventListener('click', () => {
+  if (selectedDurationMins <= MIN_BOOKING_MINS) return;
+  selectedDurationMins -= 30;
+  syncDurationDisplay();
+  updateSummaryFromSelection();
+});
+
+durationPlus?.addEventListener('click', () => {
+  selectedDurationMins += 30;
+  syncDurationDisplay();
+  updateSummaryFromSelection();
+});
+
 /* ---------- render helpers ---------- */
-function createTimelineElement() {
-  const container = document.createElement("div");
-  container.className = "timeline-container";
-  return { container };
-}
-
-/* show selection summary below timeline and show Book / Waitlist / Clear actions */
-function renderSelectionSummary(gridEl, occupancyMap) {
-  if (!gridEl) return;
-  let summary = gridEl.parentElement.querySelector(".timeline-summary");
-  if (!summary) {
-    summary = document.createElement("div");
-    summary.className = "timeline-summary mt-3 p-3 border rounded-lg bg-white flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between";
-    gridEl.parentElement.appendChild(summary);
-  }
-  summary.innerHTML = "";
-
-  if (!timelineSelection.size) {
-    const hint = document.createElement("div");
-    hint.className = "text-sm text-gray-600";
-    hint.innerHTML = "Tap 30-min ticks above to choose start/end. Minimum booking: <strong>60 mins</strong>.";
-    summary.appendChild(hint);
-    return;
-  }
-
-  // compute contiguous selection start/end
-  const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
-  const min = indices[0], max = indices[indices.length-1];
-  const startSlot = ALL_SLOTS[min];
-  const endSlot = ALL_SLOTS[max];
-  const startTime = startSlot.id.split("-")[0];
-  const endTime = endSlot.id.split("-")[1];
-  const durationMins = (max - min + 1) * 30;
-  const price = selectedAmount;
-  const priceMetric = Math.round((price * (durationMins/60)) || price);
-
-  const info = document.createElement("div");
-  info.className = "text-sm text-gray-700";
-  info.innerHTML = `<div><strong>${to12FromHHMM(startTime)} — ${to12FromHHMM(endTime)}</strong> · ${durationMins} mins</div><div class="text-xs text-gray-500 mt-1">Estimate: ₹${priceMetric}</div>`;
-  summary.appendChild(info);
-
-  // actions container
-  const actions = document.createElement("div");
-  actions.className = "flex items-center gap-2";
-
-  // determine availability
-  const availability = isRangeAvailableFor(occupancyMap || window.__GODsTurf?.occupancyMap || {}, startSlot.id, durationMins, selectedCourt);
-  const anyPast = isSlotInPast(startSlot.id, selectedDate);
-
-  const bookBtn = document.createElement("button");
-  bookBtn.className = "px-4 py-2 rounded-xl text-white";
-  bookBtn.style.minWidth = "140px";
-
-  if (anyPast) {
-    bookBtn.textContent = "Cannot book past time";
-    bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
-    bookBtn.disabled = true;
-  } else if (!availability.allowed) {
-    bookBtn.textContent = "Join Waitlist";
-    bookBtn.classList.add("bg-yellow-600");
-    addTap(bookBtn, () => {
-      openWishlistModal(startSlot, null, { startSlotId: startSlot.id, durationMins, rangeId: makeRangeIdFromStartAndDuration(startSlot.id, durationMins) });
-    });
-  } else {
-    if (durationMins < MIN_BOOKING_MINS) {
-      bookBtn.textContent = "Minimum 60 mins";
-      bookBtn.classList.add("bg-gray-400","cursor-not-allowed");
-      bookBtn.disabled = true;
-    } else {
-      bookBtn.textContent = "Book";
-      bookBtn.classList.add("bg-emerald-600");
-      addTap(bookBtn, () => {
-        openBookingModalWithRange(startSlot, durationMins);
-      });
-    }
-  }
-
-  const clearBtn = document.createElement("button");
-  clearBtn.className = "px-3 py-2 rounded-xl border";
-  clearBtn.textContent = "Clear";
-  addTap(clearBtn, ()=> {
-    timelineSelection = new Set();
-    // update visual highlights
-    const allButtons = gridEl.querySelectorAll("button[data-slot-id]");
-    allButtons.forEach(b => {
-      b.classList.remove("slot-selected");
-      b.classList.add("bg-white");
-      b.setAttribute("aria-pressed","false");
-    });
-    renderSelectionSummary(gridEl, occupancyMap);
-  });
-
-  actions.appendChild(bookBtn);
-  actions.appendChild(clearBtn);
-  summary.appendChild(actions);
-}
-
-/* ---------- render slots wrapper (patched with debug & safe placeholder) ---------- */
-async function renderSlots() {
-  try {
-    if (!slotPanel || !slotTabs) {
-      console.warn('renderSlots: slotPanel or slotTabs missing. Aborting render.');
-      return;
-    }
-    selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
-    console.debug('renderSlots START -> selectedDate:', selectedDate, 'selectedBucket:', selectedBucket, 'selectedCourt:', selectedCourt);
-
-    if (!selectedCourt) {
-      selectedCourt = '5A';
-      selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-      try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
-    }
-
-    let bookingsAll = [], wishlists = [];
-    try {
-      [bookingsAll, wishlists] = await Promise.all([fetchBookingsForDate(selectedDate), fetchWishlistsFor(selectedDate, selectedCourt)]);
-    } catch (e) {
-      console.error("renderSlots: fetch error", e);
-      toast("Error fetching bookings/wishlists.", { error: true });
-    }
-
-    const occupancy = computeSlotOccupancy(bookingsAll || []);
-    window.__GODsTurf = window.__GODsTurf || {};
-    window.__GODsTurf.occupancyMap = occupancy;
-
-    const buckets = bucketSlots(ALL_SLOTS);
-    const bucketInfo = {};
-    Object.entries(buckets).forEach(([k, items])=>{
-      const total = items.length;
-      let available = 0;
-      items.forEach(s => {
-        const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
-        if (ok && !isSlotInPast(s.id, selectedDate)) available++;
-      });
-      bucketInfo[k] = { total, available };
-    });
-
-    // build tabs
-    slotTabs.innerHTML = "";
-    const tabOrder = [
-      { key: "midnight", title: "Midnight (00:00–06:00)" },
-      { key: "morning", title: "Morning (06:00–12:00)" },
-      { key: "afternoon", title: "Afternoon (12:00–18:00)" },
-      { key: "evening", title: "Evening (18:00–00:00)" }
-    ];
-    const tabsWrap = document.createElement("div");
-    tabsWrap.className = "w-full flex gap-2 flex-wrap";
-    tabOrder.forEach(t=>{
-      const isActive = (t.key === selectedBucket);
-      const btn = document.createElement("button");
-      btn.className = ["px-3","py-2","rounded-full","text-sm","border", isActive ? "bg-emerald-600 text-white":"bg-white"].join(" ");
-      btn.style.flex = "1 1 0";
-      btn.style.minWidth = "120px";
-      btn.innerHTML = `<span class="truncate">${t.title}</span><span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">${bucketInfo[t.key].available}/${bucketInfo[t.key].total}</span>`;
-      addTap(btn, ()=> { selectedBucket = t.key; timelineSelection = new Set(); renderSlots(); });
-      tabsWrap.appendChild(btn);
-    });
-    slotTabs.appendChild(tabsWrap);
-
-    // Render timeline for the selected bucket
-    slotPanel.innerHTML = "";
-    const bucketItems = buckets[selectedBucket] || [];
-    console.debug('renderSlots -> bucketItems.length =', bucketItems.length, 'for bucket', selectedBucket);
-
-    const header = document.createElement("div");
-    header.className = "mb-3 flex items-center justify-between";
-    const title = document.createElement("h4");
-    title.className = "font-semibold";
-    const titleMap = { midnight: "Midnight (00:00–06:00)", morning: "Morning (06:00–12:00)", afternoon: "Afternoon (12:00–18:00)", evening: "Evening (18:00–00:00)" };
-    title.textContent = titleMap[selectedBucket] || "Slots";
-    header.appendChild(title);
-    const summary = document.createElement("div");
-    summary.className = "text-sm text-gray-500";
-    summary.textContent = `Showing ${bucketInfo[selectedBucket].available} available / ${bucketInfo[selectedBucket].total} total`;
-    header.appendChild(summary);
-    slotPanel.appendChild(header);
-
-    // always create timeline container so CSS doesn't collapse it
-    const { container } = createTimelineElement();
-    const bucketGrid = document.createElement("div");
-    bucketGrid.className = "timeline-grid";
-    container.appendChild(bucketGrid);
-    slotPanel.appendChild(container);
-
-    if (!bucketItems.length) {
-      console.info('renderSlots: no bucketItems, inserting placeholder.');
-      container.classList.add('empty');
-      const msg = document.createElement("div");
-      msg.className = "text-sm text-gray-600 p-4";
-      msg.textContent = "No slots in this period.";
-      bucketGrid.appendChild(msg);
-      return;
-    } else {
-      container.classList.remove('empty');
-    }
-
-    // render each slot (use the same detailed code you already had)
-    bucketItems.forEach(slot => {
-      const btn = document.createElement("button");
-      btn.className = "slot-btn";
-      btn.setAttribute("data-slot-id", slot.id);
-      btn.style.minWidth = "64px";
-      btn.style.display = "inline-flex";
-      btn.style.flexDirection = "column";
-      btn.style.alignItems = "center";
-      btn.style.justifyContent = "center";
-      btn.style.gap = "4px";
-
-      if (window.innerWidth <= 420) {
-        btn.style.minWidth = '72px';
-        btn.style.height = '48px';
-        btn.style.padding = '6px 10px';
-        btn.classList.add('slot-btn-mobile');
-      } else if (window.innerWidth <= 768) {
-        btn.style.minWidth = '56px';
-        btn.style.height = '40px';
-      } else {
-        btn.style.minWidth = '40px';
-        btn.style.height = '36px';
-      }
-
-      const past = isSlotInPast(slot.id, selectedDate);
-      const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
-
-      let state = "available";
-      if (past) {
-        state = "past";
-      } else {
-        if (occ.full || occ.cricket) {
-          state = "blocked";
-        } else if (occ.halves && occ.halves.size >= 1) {
-          state = "partial";
-        } else {
-          state = "available";
-        }
-      }
-
-      if (state === "past") {
-        btn.classList.add("slot-past");
-        btn.disabled = true;
-        btn.setAttribute("aria-disabled","true");
-      } else if (state === "blocked") {
-        btn.classList.add("slot-blocked");
-        btn.disabled = true;
-        btn.setAttribute("aria-disabled","true");
-      } else if (state === "partial") {
-        btn.classList.add("slot-partial");
-        btn.disabled = false;
-        btn.setAttribute("aria-disabled","false");
-      } else {
-        btn.classList.add("bg-white");
-        btn.disabled = false;
-        btn.setAttribute("aria-disabled","false");
-      }
-
-      const timeLabel = document.createElement("div");
-      timeLabel.textContent = to12FromHHMM(slot.start);
-      timeLabel.style.fontSize = "11px";
-      timeLabel.style.opacity = "0.95";
-      const sub = document.createElement("div");
-      sub.textContent = slot.label.split("-")[0];
-      sub.style.fontSize = "10px";
-      sub.style.opacity = "0.6";
-      btn.appendChild(timeLabel);
-      btn.appendChild(sub);
-
-      addTap(btn, (e) => {
-        if (!e.defaultPrevented && e.type === 'click') e.preventDefault && e.preventDefault();
-        if (btn.disabled) {
-          if (state === "blocked") {
-            openWishlistModal(slot, null);
-          }
-          return;
-        }
-        const sid = slot.id;
-        if (timelineSelection.has(sid)) timelineSelection.delete(sid);
-        else timelineSelection.add(sid);
-        normalizeSelectionToContiguous();
-
-        const allButtons = bucketGrid.querySelectorAll("button[data-slot-id]");
-        allButtons.forEach(b => {
-          const id = b.getAttribute("data-slot-id");
-          if (timelineSelection.has(id)) {
-            b.classList.remove("bg-white","slot-partial");
-            b.classList.add("slot-selected");
-            b.setAttribute("aria-pressed","true");
-          } else {
-            b.setAttribute("aria-pressed","false");
-            if (b.disabled) {
-            } else {
-              b.classList.remove("slot-selected");
-              b.classList.add("bg-white");
-            }
-          }
-        });
-
-        centerTimelineNode(btn);
-        renderSelectionSummary(bucketGrid, occupancy);
-      });
-
-      bucketGrid.appendChild(btn);
-    });
-
-    renderSelectionSummary(bucketGrid, occupancy);
-
-    if (timelineSelection.size) {
-      const firstId = Array.from(timelineSelection)[0];
-      const el = bucketGrid.querySelector(`[data-slot-id="${firstId}"]`);
-      if (el) centerTimelineNode(el);
-    }
-
-    console.debug('renderSlots END');
-  } catch (err) {
-    console.error('renderSlots threw:', err);
-    if (slotPanel) slotPanel.innerHTML = `<div style="padding:12px;border-radius:8px;background:#fee2e2;color:#991b1b">renderSlots error: ${String(err).slice(0,200)}</div>`;
-  }
-}
-
-/* turn timelineSelection set into contiguous range from min to max (based on slot indices) */
 function normalizeSelectionToContiguous() {
   if (!timelineSelection.size) return;
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
@@ -698,32 +426,244 @@ function normalizeSelectionToContiguous() {
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
 }
 
-/* helper: center a node inside the horizontally scrollable timeline container */
-function centerTimelineNode(node) {
+async function renderAll() {
+  selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
+
+  let bookingsAll = [], wishlists = [];
   try {
-    const container = node && node.closest('.timeline-container');
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const nodeRect = node.getBoundingClientRect();
-    const nodeCenter = (nodeRect.left + nodeRect.right) / 2;
-    const containerLeft = rect.left;
-    const offset = nodeCenter - containerLeft - (rect.width / 2);
-    container.scrollBy({ left: offset, behavior: 'smooth' });
-  } catch (e) { /* ignore */ }
+    [bookingsAll, wishlists] = await Promise.all([
+      fetchBookingsForDate(selectedDate),
+      fetchWishlistsFor(selectedDate, selectedCourt)
+    ]);
+  } catch (e) {
+    toast('Error fetching bookings/wishlists.', { error: true });
+  }
+
+  const occupancy = computeSlotOccupancy(bookingsAll || []);
+  window.__GODsTurf = window.__GODsTurf || {};
+  window.__GODsTurf.occupancyMap = occupancy;
+
+  const buckets = bucketSlots(ALL_SLOTS);
+  renderTimeBuckets(buckets, occupancy);
+  renderTimeChips(buckets, occupancy);
+  renderCourtsGrid(occupancy);
+  updateSummaryFromSelection();
+}
+
+function renderTimeBuckets(buckets, occupancy) {
+  if (!timeBucketTabs) return;
+  const bucketInfo = {};
+  Object.entries(buckets).forEach(([k, items]) => {
+    let available = 0;
+    items.forEach(s => {
+      const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
+      if (ok && !isSlotInPast(s.id, selectedDate)) available++;
+    });
+    bucketInfo[k] = { total: items.length, available };
+  });
+
+  const tabOrder = [
+    { key: 'midnight', title: 'Midnight' },
+    { key: 'morning',  title: 'Morning' },
+    { key: 'afternoon',title: 'Afternoon' },
+    { key: 'evening',  title: 'Evening' }
+  ];
+
+  timeBucketTabs.innerHTML = '';
+  tabOrder.forEach(t => {
+    const info = bucketInfo[t.key] || { total: 0, available: 0 };
+    const isActive = t.key === selectedBucket;
+    const btn = document.createElement('button');
+    btn.className = [
+      'px-3','py-2','rounded-full','text-sm','border','flex-1',
+      isActive ? 'bg-emerald-600 text-white' : 'bg-white'
+    ].join(' ');
+    btn.innerHTML = `
+      <span class="truncate">${t.title}</span>
+      <span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">
+        ${info.available}/${info.total}
+      </span>
+    `;
+    addTap(btn, () => {
+      selectedBucket = t.key;
+      timelineSelection = new Set();
+      renderAll();
+    });
+    timeBucketTabs.appendChild(btn);
+  });
+}
+
+function renderTimeChips(buckets, occupancy) {
+  if (!timeChips) return;
+  const bucketItems = buckets[selectedBucket] || [];
+  timeChips.innerHTML = '';
+
+  const container = document.createElement('div');
+  container.className = 'timeline-container';
+  const grid = document.createElement('div');
+  grid.className = 'timeline-grid';
+  container.appendChild(grid);
+  timeChips.appendChild(container);
+
+  if (!bucketItems.length) {
+    const msg = document.createElement('div');
+    msg.className = 'text-sm text-gray-600 p-4';
+    msg.textContent = 'No slots in this period.';
+    grid.appendChild(msg);
+    return;
+  }
+
+  bucketItems.forEach(slot => {
+    const btn = document.createElement('button');
+    btn.className = 'slot-btn';
+    btn.setAttribute('data-slot-id', slot.id);
+
+    const past = isSlotInPast(slot.id, selectedDate);
+    const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
+
+    let state = 'available';
+    if (past) state = 'past';
+    else if (occ.full || occ.cricket) state = 'blocked';
+    else if (occ.halves && occ.halves.size >= 1) state = 'partial';
+
+    if (state === 'past') {
+      btn.classList.add('slot-past');
+      btn.disabled = true;
+    } else if (state === 'blocked') {
+      btn.classList.add('slot-blocked');
+      btn.disabled = true;
+    } else if (state === 'partial') {
+      btn.classList.add('slot-partial');
+    } else {
+      btn.classList.add('bg-white');
+    }
+
+    const timeLabel = document.createElement('div');
+    timeLabel.textContent = to12FromHHMM(slot.start);
+    timeLabel.style.fontSize = '13px';
+    const sub = document.createElement('div');
+    sub.textContent = slot.label.split('-')[0];
+    sub.style.fontSize = '11px';
+    sub.style.opacity = '0.7';
+    btn.appendChild(timeLabel);
+    btn.appendChild(sub);
+
+    addTap(btn, () => {
+      if (btn.disabled) {
+        if (state === 'blocked') openWishlistModal(slot, null);
+        return;
+      }
+      const sid = slot.id;
+      if (timelineSelection.has(sid)) timelineSelection.delete(sid);
+      else timelineSelection.add(sid);
+      normalizeSelectionToContiguous();
+
+      grid.querySelectorAll('button[data-slot-id]').forEach(b => {
+        const id = b.getAttribute('data-slot-id');
+        if (timelineSelection.has(id)) {
+          b.classList.remove('bg-white','slot-partial');
+          b.classList.add('slot-selected');
+        } else {
+          b.classList.remove('slot-selected');
+          if (!b.disabled) b.classList.add('bg-white');
+        }
+      });
+
+      updateSummaryFromSelection();
+    });
+
+    grid.appendChild(btn);
+  });
+}
+
+function renderCourtsGrid(occupancy) {
+  if (!courtsGrid) return;
+  courtsGrid.innerHTML = '';
+  Object.keys(PRICE_BY_COURT).forEach(courtId => {
+    const meta = metaFor(courtId);
+    const card = document.createElement('div');
+    card.className = 'border rounded-xl p-3 flex flex-col gap-2 bg-white hover:border-emerald-500 transition';
+
+    const title = document.createElement('div');
+    title.className = 'font-semibold text-sm';
+    title.textContent = meta.label;
+    card.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.className = 'text-xs text-gray-500';
+    sub.textContent = `Default: 60 mins · ₹${PRICE_BY_COURT[courtId]}${meta.dims ? ' · ' + meta.dims : ''}`;
+    card.appendChild(sub);
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'mt-2 flex flex-wrap gap-2';
+    const selectBtn = document.createElement('button');
+    selectBtn.className = 'px-3 py-1.5 rounded-xl text-sm ' + (selectedCourt === courtId ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800');
+    selectBtn.textContent = selectedCourt === courtId ? 'Selected' : 'Select';
+    addTap(selectBtn, () => {
+      selectedCourt = courtId;
+      selectedAmount = PRICE_BY_COURT[courtId] || 0;
+      const s = document.getElementById('selectedPitch');
+      const p = document.getElementById('selectedPrice');
+      if (s) s.textContent = meta.label + (meta.dims ? ` · ${meta.dims}` : '');
+      if (p) p.textContent = `₹${selectedAmount}`;
+      renderAll();
+    });
+
+    btnRow.appendChild(selectBtn);
+    card.appendChild(btnRow);
+    courtsGrid.appendChild(card);
+  });
+}
+
+function updateSummaryFromSelection() {
+  if (!summaryDate) return;
+
+  summaryDate.textContent = selectedDate || '—';
+
+  if (!timelineSelection.size) {
+    if (summaryStart) summaryStart.textContent = '—';
+    if (summaryEnd) summaryEnd.textContent = '—';
+    if (summaryDuration) summaryDuration.textContent = '—';
+    if (summaryCourt) summaryCourt.textContent = metaFor(selectedCourt).label || '—';
+    if (summaryTotal) summaryTotal.textContent = '₹0';
+    if (summaryBookBtn) summaryBookBtn.disabled = true;
+    return;
+  }
+
+  const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
+  const min = indices[0];
+  const startSlot = ALL_SLOTS[min];
+  const startTime = startSlot.id.split('-')[0];
+
+  const rangeId = makeRangeIdFromStartAndDuration(startSlot.id, selectedDurationMins);
+  const [_, endTime] = rangeId.split('-');
+
+  if (summaryStart) summaryStart.textContent = to12FromHHMM(startTime);
+  if (summaryEnd) summaryEnd.textContent = to12FromHHMM(endTime);
+  const hrs = selectedDurationMins / 60;
+  if (summaryDuration) summaryDuration.textContent = hrs + ' hr' + (hrs > 1 ? 's' : '');
+  if (summaryCourt) summaryCourt.textContent = metaFor(selectedCourt).label;
+  const total = Math.round((selectedAmount || 0) * (selectedDurationMins/60));
+  if (summaryTotal) summaryTotal.textContent = '₹' + total;
+
+  if (summaryBookBtn) {
+    summaryBookBtn.disabled = false;
+    summaryBookBtn.onclick = () => {
+      openBookingModalWithRange(startSlot, selectedDurationMins);
+    };
+  }
 }
 
 /* ---------- modal helpers & booking flow ---------- */
 function openBookingModalWithRange(startSlot, durationMins) {
   modalMode = "booking";
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-  if (mTitle) mTitle.textContent = `Book ${selectedCourt} · ${to12FromHHMM(startSlot.start)}`;
+  if (mTitle) mTitle.textContent = `Book ${metaFor(selectedCourt).label}`;
   if (mWhen) mWhen.textContent = `${selectedDate} · ${to12FromHHMM(startSlot.start)} — ${to12FromHHMM(makeRangeIdFromStartAndDuration(startSlot.id, durationMins).split("-")[1])}`;
   if (mPrice) mPrice.textContent = `₹${Math.round(selectedAmount * (durationMins/60))}`;
-  if (mConfirm) mConfirm.textContent = "Confirm";
+  if (mConfirm) mConfirm.textContent = "Confirm Booking";
   preferredBookingId = null;
   resetModalFields();
-  const mD = $("#m-duration");
-  if (mD) mD.value = String(durationMins);
   if (modal) {
     modal.dataset.startSlot = startSlot.id;
     modal.dataset.durationMins = String(durationMins);
@@ -734,7 +674,7 @@ function openBookingModalWithRange(startSlot, durationMins) {
 function openWishlistModal(slot, prefBookingId = null, extra = null) {
   modalMode = "wishlist";
   selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-  if (mTitle) mTitle.textContent = `Wishlist — ${selectedCourt} · ${to12FromHHMM(slot.start)}`;
+  if (mTitle) mTitle.textContent = `Wishlist — ${metaFor(selectedCourt).label}`;
   if (mWhen) mWhen.textContent = `${selectedDate} · ${to12FromHHMM(slot.start)}`;
   if (mPrice) mPrice.textContent = selectedAmount ? `₹${selectedAmount}` : "-";
   if (mConfirm) mConfirm.textContent = "Save to Wishlist";
@@ -776,7 +716,7 @@ function setConfirmLoading(isLoading) {
     mConfirm.classList.add("opacity-70","cursor-not-allowed");
   } else {
     mConfirm.disabled = false;
-    mConfirm.textContent = mConfirm.dataset.orig || (modalMode === "wishlist" ? "Save to Wishlist" : "Confirm");
+    mConfirm.textContent = mConfirm.dataset.orig || (modalMode === "wishlist" ? "Save to Wishlist" : "Confirm Booking");
     mConfirm.classList.remove("opacity-70","cursor-not-allowed");
   }
 }
@@ -804,7 +744,6 @@ mConfirm?.addEventListener("click", async () => {
 
   if (!selectedCourt || !selectedDate) { return alert("Select a pitch and date first."); }
 
-  // determine startSlot & duration from modal.dataset
   const startSlotId = modal?.dataset?.startSlot;
   const durationMins = Number(modal?.dataset?.durationMins || MIN_BOOKING_MINS);
   const rangeId = modal?.dataset?.rangeId || makeRangeIdFromStartAndDuration(startSlotId, durationMins);
@@ -819,18 +758,16 @@ mConfirm?.addEventListener("click", async () => {
   const normCourt = normalizedKey(selectedCourt);
 
   if (modalMode === "booking") {
-    // final availability check
     const existing = await fetchBookingsForDate(selectedDate);
     const occMap = computeSlotOccupancy(existing);
     const availabilityCheck = isRangeAvailableFor(occMap, startSlotId, durationMins, normCourt);
     if (!availabilityCheck.allowed) {
       alert("Sorry — that slot/time is not available: " + (availabilityCheck.reason || "Unavailable"));
       closeModalFn();
-      renderSlots();
+      renderAll();
       return;
     }
 
-    // prorate saved amount by duration
     const amountToSave = Math.round((selectedAmount || 0) * (durationMins / 60));
 
     const booking = {
@@ -853,7 +790,7 @@ mConfirm?.addEventListener("click", async () => {
       const ref = await addDoc(collection(db, "bookings"), booking);
       if (cid) cid.textContent = ref.id;
       if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
-      if (ccourt) ccourt.textContent = (normCourt === "5A" ? "Half Ground A" : normCourt === "5B" ? "Half Ground B" : normCourt === "7A" ? "Full Ground Football" : "Cricket (Full)");
+      if (ccourt) ccourt.textContent = metaFor(normCourt).label;
       if (camount) camount.textContent = `₹${booking.amount}`;
       const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
@@ -861,9 +798,8 @@ mConfirm?.addEventListener("click", async () => {
       show(confirmCard);
       closeModalFn();
       toast("Booking successful — check confirmation card.", { duration: 5000 });
-      // clear timeline selection
       timelineSelection = new Set();
-      renderSlots();
+      renderAll();
     } catch (err) {
       console.error("Booking failed", err);
       toast("Booking failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
@@ -875,10 +811,8 @@ mConfirm?.addEventListener("click", async () => {
   }
 
   if (modalMode === "wishlist") {
-    // save wishlist entry (rangeId or single slot)
     try {
       setConfirmLoading(true);
-      // dedupe check
       const dupQ = query(collection(db, "wishlists"),
         where("date","==", selectedDate),
         where("court","==", normalizedKey(selectedCourt)),
@@ -895,9 +829,7 @@ mConfirm?.addEventListener("click", async () => {
         return;
       }
 
-      // For wishlist we also save a prorated amount for clarity
       const wishlistAmount = Math.round((selectedAmount || 0) * (durationMins / 60));
-
       const wishlistEntry = {
         userName: name,
         phone,
@@ -916,7 +848,7 @@ mConfirm?.addEventListener("click", async () => {
       toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
       closeModalFn();
       timelineSelection = new Set();
-      renderSlots();
+      renderAll();
     } catch (err) {
       console.error("Wishlist save failed", err);
       toast("Wishlist save failed: " + (err?.message || String(err)), { error: true, duration: 8000 });
@@ -928,146 +860,37 @@ mConfirm?.addEventListener("click", async () => {
   }
 });
 
-/* ---------- hide confirm card on date change ---------- */
 dateInput?.addEventListener("change", ()=> {
   hide(confirmCard);
   timelineSelection = new Set();
-  renderSlots();
+  selectedDate = dateInput.value;
+  buildWeekStrip(selectedDate);
+  renderAll();
 });
 
-/* ---------- pitch selector ---------- */
+/* ---------- pitch selector (simplified for new layout) ---------- */
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
-  if (!container) {
-    console.debug("Pitch selector container not found");
-    return { setSelected: (k)=>{} };
-  }
-
-  const previewUrl = './assets/turf_left.jpg';
-
+  if (!container) return;
+  
   container.innerHTML = `
-    <div class="rounded-2xl shadow-md p-3 bg-white">
-      <div class="flex flex-col sm:flex-row justify-between items-center mb-3 gap-3">
-        <h3 class="text-lg font-medium">Choose pitch</h3>
-        <div class="space-x-2 w-full sm:w-auto">
-          <button data-pitch="half-left" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (left)</button>
-          <button data-pitch="half-right" class="pitch-btn px-3 py-1 rounded-full border text-sm">Half (right)</button>
-          <button data-pitch="full" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full</button>
-          <button data-pitch="full-cricket" class="pitch-btn px-3 py-1 rounded-full border text-sm">Full (Cricket)</button>
-        </div>
-      </div>
-
-      <div class="relative flex flex-col md:flex-row gap-4">
-        <div class="flex-1 flex justify-center">
-          <!-- simplified SVG pitch -->
-          <svg id="pitchSvg" viewBox="0 0 1200 800" class="rounded-lg" style="max-width:720px;width:100%;height:auto;">
-            <defs><linearGradient id="__grass" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2f7a2f"/><stop offset="100%" stop-color="#2aa02a"/></linearGradient></defs>
-            <rect x="40" y="40" rx="36" ry="36" width="1120" height="720" fill="url(#__grass)" stroke="#0d6b3c" stroke-width="3"/>
-            <line x1="600" y1="40" x2="600" y2="760" stroke="#fff" stroke-width="3"/>
-            <circle cx="600" cy="400" r="90" fill="none" stroke="#fff" stroke-width="3"/>
-            <rect x="40" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
-            <rect x="980" y="200" width="180" height="400" fill="none" stroke="#fff" stroke-width="3" rx="12"/>
-            <rect id="area-full" x="40" y="40" width="1120" height="720" rx="28" fill="transparent" stroke="transparent" cursor="pointer" />
-            <ellipse id="area-cricket" cx="600" cy="400" rx="540" ry="330" fill="transparent" stroke="transparent" stroke-width="6" cursor="pointer" />
-            <rect id="area-left" x="40" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
-            <rect id="area-right" x="600" y="40" width="560" height="720" rx="20" fill="transparent" stroke="transparent" cursor="pointer" />
-            <text x="320" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Left Half</text>
-            <text x="880" y="60" text-anchor="middle" font-size="22" fill="#fff" opacity="0.9">Right Half</text>
-            <g id="selectionHighlight"></g>
-          </svg>
-        </div>
-
-        <div class="w-56 flex-shrink-0">
-          <div class="rounded-md overflow-hidden border p-2 bg-white shadow-sm">
-            <div class="text-xs text-gray-500 mb-2">Current UI preview</div>
-            <img id="pitchPreviewImg" src="${previewUrl}" alt="current-ui" class="w-full h-40 object-cover rounded" />
-            <div class="mt-2 text-xs text-gray-600">This preview is the image you uploaded — useful while replacing the half-ground graphic.</div>
-          </div>
-        </div>
-      </div>
+    <div class="text-sm text-gray-600">
+      <p>Select a court from the grid below to view availability and book.</p>
     </div>
   `;
-
-  const pitchToCourt = {
-    "half-left": { id: "5A", label: "Half Ground A", dims: COURT_META["5A"].dims },
-    "half-right": { id: "5B", label: "Half Ground B", dims: COURT_META["5B"].dims },
-    "full": { id: "7A", label: "Full Ground", dims: COURT_META["7A"].dims },
-    "full-cricket": { id: "CRK", label: "Full Ground (Cricket)", dims: COURT_META["CRK"].dims }
-  };
-
-  function updateSelectedPanel(courtKey) {
-    const meta = metaFor(courtKey);
-    const labelWithDims = meta.label + (meta.dims ? ` · ${meta.dims}` : "");
-    const price = PRICE_BY_COURT[courtKey] || 0;
-    try {
-      if (window && window.__GODsTurf && typeof window.__GODsTurf.updateSelectedUI === "function") {
-        window.__GODsTurf.updateSelectedUI(labelWithDims, price);
-      } else {
-        const s = document.getElementById('selectedPitch');
-        const p = document.getElementById('selectedPrice');
-        if (s) s.textContent = labelWithDims;
-        if (p) p.textContent = price ? `₹${price}` : '—';
-      }
-    } catch (e) { console.warn("updateSelectedPanel failed", e); }
-  }
-
-  function setSelectedByPitch(pitchKey) {
-    if (!pitchToCourt[pitchKey]) return;
-    const target = pitchToCourt[pitchKey];
-    selectedCourt = normalizedKey(target.id);
-    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-    updateSelectedPanel(selectedCourt);
-    try { renderSlots(); } catch(e) { console.warn("renderSlots not ready", e); }
-  }
-
-  // wire pitch buttons
-  $$(".pitch-btn", container).forEach(b => {
-    addTap(b, (ev) => {
-      const p = ev.currentTarget?.getAttribute("data-pitch");
-      setSelectedByPitch(p);
-      // style toggling
-      $$(".pitch-btn", container).forEach(x=> x.classList.remove("bg-green-600","text-white"));
-      ev.currentTarget.classList.add("bg-green-600","text-white");
-    });
-  });
-
-  const areaLeft = container.querySelector("#area-left");
-  const areaRight = container.querySelector("#area-right");
-  const areaFull = container.querySelector("#area-full");
-  const areaCricket = container.querySelector("#area-cricket");
-
-  addTap(areaLeft, ()=> setSelectedByPitch("half-left"));
-  addTap(areaRight, ()=> setSelectedByPitch("half-right"));
-  addTap(areaFull, ()=> setSelectedByPitch("full"));
-  addTap(areaCricket, ()=> setSelectedByPitch("full-cricket"));
-
-  return {
-    setSelected: (pitchKey) => { if (!pitchToCourt[pitchKey]) return; setSelectedByPitch(pitchKey); }
-  };
 }
 
 /* ---------- initialization ---------- */
-window.addEventListener("load", async () => {
-  selectedDate = dateInput?.value || fmtDateISO(new Date());
-  if (dateInput && !dateInput.value) dateInput.value = selectedDate;
-
-  let selectorApi = { setSelected: (k)=>{} };
-  try { selectorApi = initPitchSelector(); } catch (e) { console.warn("initPitchSelector failed", e); }
-
-  try {
-    selectorApi.setSelected('half-left');
-  } catch (e) {
-    selectedCourt = '5A';
-    selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-    try { window.__GODsTurf?.updateSelectedUI && window.__GODsTurf.updateSelectedUI(metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : ""), selectedAmount); } catch(e){}
-  }
-
-  // small debug to help validate occupancy vs selectedCourt (remove if not needed)
-  window.__GODsTurf = window.__GODsTurf || {};
-  window.__GODsTurf.debug = function(){ console.log('DEBUG selectedCourt', selectedCourt); console.log('DEBUG occupancy sample', window.__GODsTurf.occupancyMap); };
-
-  // render initial slots/timeline
-  setTimeout(()=> {
-    try { renderSlots(); } catch (e) { console.error("renderSlots error", e); }
-  }, 60);
+window.addEventListener('DOMContentLoaded', () => {
+  initPitchSelector();
+  
+  // Set selected pitch display
+  const s = document.getElementById('selectedPitch');
+  const p = document.getElementById('selectedPrice');
+  if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
+  if (p) p.textContent = `₹${selectedAmount}`;
+  
+  buildWeekStrip(selectedDate);
+  syncDurationDisplay();
+  renderAll();
 });
