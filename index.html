@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GODs Turf — Book Your Slot (Mobile Optimized)</title>
-  <meta name="description" content="Mobile-optimized booking widget for GODs Turf" />
+  <title>GODs Turf — Book Your Slot</title>
+  <meta name="description" content="Booking widget for GODs Turf" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -16,11 +16,10 @@
     .hero-height{height:36vh}
     @media(min-width:768px){.hero-height{height:48vh}}
 
-    /* timeline / ticks */
+    /* timeline / ticks (still used for time chips if needed) */
     .timeline-container{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-top:.5rem;padding-bottom:14px}
     .timeline-grid{display:inline-grid;grid-auto-flow:column;grid-auto-columns:minmax(110px, min-content);gap:16px;align-items:center}
 
-    /* bigger, tappable slots (desktop default) */
     .slot-btn{box-sizing:border-box;min-width:110px !important;height:90px !important;padding:14px 12px !important;display:inline-flex;flex-direction:column;align-items:center;justify-content:center;border-radius:18px !important;border:1px solid #e5e7eb;font-size:16px !important;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:180px;line-height:1.2}
     .slot-btn>div{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;text-align:center;padding:0;margin:0}
     .slot-btn>div:first-child{font-size:15px !important;font-weight:700}
@@ -31,7 +30,6 @@
     .slot-partial{background:#fffbeb;color:#92400e;border-color:#fef3c7}
     .slot-selected{background:var(--accent);color:#fff;border-color:#15803d}
 
-    /* desktop minor compacting for medium screens */
     @media (min-width:420px) and (max-width:768px) {
       .timeline-grid{grid-auto-columns:minmax(90px, min-content);gap:12px}
       .slot-btn{min-width:90px;height:72px;font-size:14px}
@@ -39,19 +37,14 @@
       .slot-btn>div:last-child{font-size:11px}
     }
 
-    /* ---------- MOBILE: VERY COMPACT LAYOUT ---------- */
     @media (max-width: 420px) {
-      /* reduce hero height */
       .hero-height { height: 22vh !important; min-height: 100px !important; }
 
-      /* tighten page padding */
       #book { padding-top: 8px !important; padding-bottom: 12px !important; }
 
-      /* timeline spacing & columns */
       .timeline-container { padding-top: 6px !important; padding-bottom: 8px !important; }
       .timeline-grid { gap: 18px !important; grid-auto-columns: minmax(120px, min-content) !important; }
 
-      /* very compact slot buttons */
       .slot-btn {
         min-width: 120px !important;
         height: 110px !important;
@@ -62,20 +55,13 @@
       .slot-btn>div:first-child{font-size:15px !important}
       .slot-btn>div:last-child{font-size:13px !important}
 
-      /* SVG pitch: very compact */
       #pitchSvg { height: 130px !important; max-height: 130px !important; width: 100% !important; }
-
-      /* Hide UI preview image on mobile */
       #pitchPreviewImg { display: none !important; }
-
-      /* Compact the preview card */
       #pitchSelectorContainer .rounded-2xl .w-56 { display:none; }
 
-      /* compact paddings for small cards */
       .p-4 { padding: 8px !important; }
       .rounded-2xl { border-radius: 10px !important; }
 
-      /* make mobile CTA sticky */
       .mobile-booking-cta {
         display:block !important;
         position: fixed;
@@ -93,15 +79,12 @@
       }
       .mobile-booking-cta .btn { width: 100%; padding: 12px 16px; font-size: 16px; border-radius: 10px; }
 
-      /* collapse some aside content to save space */
       aside .p-4 { padding: 8px !important; }
       #contact .mt-3 { margin-top: 6px !important; }
     }
 
-    /* helper / summary */
     .timeline-summary{margin-top:0.5rem}
 
-    /* pitch buttons */
     #pitchSelectorContainer .pitch-btn{border-radius:9999px;padding:.4rem .7rem}
     @media(max-width:640px){ #pitchSelectorContainer .pitch-btn{display:block;width:100%;margin-bottom:.35rem} }
   </style>
@@ -115,7 +98,7 @@
         <span class="font-extrabold tracking-tight site-brand-text">GODs Turf</span>
       </a>
       <div class="flex items-center gap-2">
-        <a id="waLink" class="wa-btn" href="#" target="_blank" rel="noopener">WhatsApp</a>
+        <a id="waLink" class="wa-btn px-3 py-2 rounded-xl border border-emerald-600 text-emerald-700" href="#" target="_blank" rel="noopener">WhatsApp</a>
         <a id="callLinkHeader" class="px-3 py-2 rounded-xl border" href="#">Call</a>
       </div>
     </div>
@@ -140,10 +123,16 @@
 
   <section id="book" class="max-w-6xl mx-auto px-4 py-6">
     <div class="grid md:grid-cols-3 gap-6">
+      <!-- LEFT: controls + courts -->
       <div class="md:col-span-2 space-y-4">
+        <!-- Date + pitch -->
         <div class="p-4 border rounded-2xl bg-white">
           <label for="date" class="text-xs text-gray-600 block mb-2">Choose date</label>
           <input id="date" type="date" class="w-full md:w-auto border rounded-xl px-3 py-2" />
+
+          <!-- Week strip (UI only; JS will sync with #date) -->
+          <div id="weekStrip" class="mt-3 flex gap-2 overflow-x-auto pb-1"></div>
+
           <div id="pitchSelectorContainer" class="mt-4"></div>
 
           <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
@@ -158,15 +147,31 @@
           </div>
         </div>
 
+        <!-- Time + courts -->
         <div class="p-4 border rounded-2xl bg-white">
-          <h3 class="font-semibold mb-3">Available slots</h3>
-          <div id="slotTabs" class="mb-3"></div>
+          <h3 class="font-semibold mb-3">Choose time & court</h3>
 
-          <div id="slotPanel" class="timeline-container rounded-md" role="region" aria-live="polite"></div>
+          <!-- Time of day pills -->
+          <div id="timeBucketTabs" class="mb-3 flex flex-wrap gap-2"></div>
 
-          <!-- summary is injected by JS; removed static duplicate hint -->
+          <!-- Time chips (30-min starts) -->
+          <div id="timeChips" class="timeline-container rounded-md" role="region" aria-live="polite"></div>
+
+          <!-- Duration control -->
+          <div id="durationControl" class="mt-3 flex items-center gap-3 text-sm">
+            <span class="text-gray-600">Duration</span>
+            <div class="inline-flex items-center border rounded-xl overflow-hidden">
+              <button id="durationMinus" class="px-3 py-1 text-lg leading-none">−</button>
+              <span id="durationDisplay" class="px-3 py-1 border-l border-r">1 hr</span>
+              <button id="durationPlus" class="px-3 py-1 text-lg leading-none">+</button>
+            </div>
+          </div>
+
+          <!-- Courts grid -->
+          <div id="courtsGrid" class="mt-4 grid sm:grid-cols-2 gap-3"></div>
         </div>
 
+        <!-- Booking created confirmation -->
         <div id="confirmCard" class="hidden p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
           <h4 class="font-semibold mb-1">Booking created</h4>
           <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
@@ -183,7 +188,25 @@
         </div>
       </div>
 
+      <!-- RIGHT: booking summary + info -->
       <aside class="space-y-4">
+        <!-- Booking summary (visible on mobile and desktop) -->
+        <div class="p-4 border rounded-2xl bg-white">
+          <h3 class="font-semibold mb-3">Booking Summary</h3>
+          <div class="space-y-1 text-sm">
+            <p><span class="text-gray-500">Date:</span> <span id="summaryDate">—</span></p>
+            <p><span class="text-gray-500">Start:</span> <span id="summaryStart">—</span></p>
+            <p><span class="text-gray-500">End:</span> <span id="summaryEnd">—</span></p>
+            <p><span class="text-gray-500">Court:</span> <span id="summaryCourt">—</span></p>
+            <p><span class="text-gray-500">Duration:</span> <span id="summaryDuration">—</span></p>
+          </div>
+          <div class="mt-3 flex items-center justify-between text-sm">
+            <span class="text-gray-500">Total</span>
+            <span id="summaryTotal" class="text-lg font-semibold">₹0</span>
+          </div>
+          <button id="summaryBookBtn" class="mt-4 w-full px-4 py-2 rounded-xl bg-emerald-600 text-white disabled:bg-gray-300 disabled:cursor-not-allowed">Book Now</button>
+        </div>
+
         <div class="p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold">Facilities & Amenities</h3>
           <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
@@ -278,6 +301,7 @@
     })();
   </script>
 
+  <!-- main booking logic (unchanged file path) -->
   <script type="module" src="./scripts/app.js"></script>
 
   <footer class="border-t mt-8">
