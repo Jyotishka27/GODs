@@ -88,29 +88,38 @@ body {
   margin-top: 6px !important;
 }
 
-/* States */
+/* States: keep them specific and strong so they override utility classes */
 .slot-past {
-  background: #f8fafc;
-  color: #9ca3af;
-  border-color: #f1f5f9;
+  background: #f8fafc !important;
+  color: #9ca3af !important;
+  border-color: #f1f5f9 !important;
 }
 
 .slot-blocked {
-  background: #fff1f2;
-  color: #991b1b;
-  border-color: #fee2e2;
+  background: #fff1f2 !important;
+  color: #991b1b !important;
+  border-color: #fee2e2 !important;
 }
 
 .slot-partial {
-  background: #fffbeb;
-  color: #92400e;
-  border-color: #fef3c7;
+  background: #fffbeb !important;
+  color: #92400e !important;
+  border-color: #fef3c7 !important;
 }
 
-.slot-selected {
-  background: var(--accent);
-  color: #fff;
-  border-color: #15803d;
+/* Strong selected style so text never becomes unreadable */
+.slot-btn.slot-selected,
+.slot-selected.slot-btn {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: #15803d !important;
+  box-shadow: 0 4px 10px rgba(21,128,61,0.12) !important;
+}
+
+/* make sure child text inherits the selected color */
+.slot-btn.slot-selected > div,
+.slot-selected > div {
+  color: inherit !important;
 }
 
 /* -----------------------------
