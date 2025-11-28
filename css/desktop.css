@@ -166,3 +166,57 @@ body {
 
 /* Small polish to ensure the first chip isn't hidden under container padding */
 .timeline-container { padding-left: 8px; }
+
+/* ===== equal-width time-bucket tabs (Option B) =====
+   Keep these rules close to your #timeBucketTabs section in mobile.css and desktop.css
+   They assume your markup keeps `flex-1` on the buttons (Tailwind's flex-1). */
+#timeBucketTabs {
+  /* use flex so each child with flex-1 will share available width equally */
+  display: flex !important;
+  gap: 0.5rem !important;
+  align-items: center;
+  /* allow horizontal scroll if viewport too narrow */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 0;
+}
+
+/* make each tab an inline-flex row and center contents */
+#timeBucketTabs button {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.5rem !important;
+  padding: 0.45rem 0.75rem !important; /* stable padding */
+  min-height: 40px !important;         /* stable height */
+  min-width: 110px;                    /* minimum width for equalization */
+  flex: 1 1 0% !important;             /* ensure flex-1 behaviour: equal widths */
+  white-space: nowrap !important;      /* prevent vertical wrapping */
+  line-height: 1 !important;
+  border-radius: 9999px !important;    /* keep pill shape consistent */
+}
+
+/* visual truncation for long labels */
+#timeBucketTabs .truncate {
+  max-width: 6.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* make the small badge less likely to push height */
+#timeBucketTabs .ml-2.text-xs {
+  padding: 0.12rem 0.45rem !important;
+  font-size: 11px !important;
+  white-space: nowrap !important;
+}
+
+/* small tweak: reduce left-margin on .ml-2 inside the tabs (keeps spacing tight) */
+#timeBucketTabs .ml-2 { margin-left: 0.5rem !important; }
+
+/* responsive adjustment: slightly smaller min-width on very small screens */
+@media (max-width: 420px) {
+  #timeBucketTabs button { min-width: 92px; padding: 0.35rem 0.6rem !important; min-height: 36px !important; }
+  #timeBucketTabs .truncate { max-width: 5.2rem; }
+}
