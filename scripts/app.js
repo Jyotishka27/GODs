@@ -51,44 +51,19 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
-/* ---------- improved addTap (touch-friendly; does not block scroll) ---------- */
-// Only fire handler when a real tap (no meaningful move) occurs. Keep click fallback.
 function addTap(el, handler) {
   if (!el) return;
-  let startX = 0, startY = 0, moved = false, tracking = false;
-
-  function onTouchStart(e) {
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    tracking = true;
-    moved = false;
-    startX = t.clientX;
-    startY = t.clientY;
-  }
-  function onTouchMove(e) {
-    if (!tracking) return;
-    const t = e.touches && e.touches[0];
-    if (!t) return;
-    if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) {
-      moved = true;
-    }
-  }
-  function onTouchEnd(e) {
-    if (!tracking) return;
-    tracking = false;
-    if (!moved) {
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isTouch) {
+    el.addEventListener('touchstart', function touchHandler(e){
+      e.preventDefault();
       try { handler(e); } catch(err){ console.error(err); }
-    }
+    }, { passive: false });
+  } else {
+    el.addEventListener('click', function clickHandler(e){
+      try { handler(e); } catch(err){ console.error(err); }
+    });
   }
-
-  el.addEventListener('touchstart', onTouchStart, { passive: true });
-  el.addEventListener('touchmove', onTouchMove, { passive: true });
-  el.addEventListener('touchend', onTouchEnd, { passive: true });
-
-  // click fallback for non-touch
-  el.addEventListener('click', function clickHandler(e){
-    try { handler(e); } catch(err){ console.error(err); }
-  });
 }
 
 /* ---------- debug: surface runtime errors into UI ---------- */
@@ -175,6 +150,7 @@ function metaFor(courtId) {
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
+/* ---------- expand booking to slots ---------- */
 function expandBookingToSlots(bookingRangeId) {
   if (!bookingRangeId || typeof bookingRangeId !== "string") return [];
   const [start, end] = bookingRangeId.split("-");
@@ -199,6 +175,7 @@ function expandBookingToSlots(bookingRangeId) {
   return out;
 }
 
+/* ---------- computeSlotOccupancy (fixed) ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   ALL_SLOTS.forEach(s => { m[s.id] = { halves: new Set(), full: false, cricket: false, bookings: [] }; });
@@ -209,24 +186,39 @@ function computeSlotOccupancy(bookingDocs) {
     const courtId = normalizedKey(rawCourt);
     const meta = metaFor(courtId);
     const covered = expandBookingToSlots(b.slotId);
+
+    // keep booking record always (for wishlist logic / info), but only
+    // mark occupation flags for CONFIRMED bookings.
     covered.forEach(slotId => {
       if (!m[slotId]) m[slotId] = { halves: new Set(), full: false, cricket: false, bookings: [] };
       const s = m[slotId];
       const copy = { ...b, court: courtId };
       s.bookings.push(copy);
-      if ((b.status || "").toLowerCase() === "cancelled") return;
-      if (meta.type === "half") {
-        if (courtId) s.halves.add(courtId);
-      } else if (meta.type === "full") {
-        s.full = true;
-      } else if (meta.type === "cricket") {
-        s.cricket = true;
+
+      // ignore cancelled bookings entirely
+      const status = (b.status || "").toLowerCase();
+      if (status === "cancelled" || status === "canceled") {
+        return;
       }
+
+      // only mark occupancy for confirmed bookings (so pending doesn't block)
+      if (status === "confirmed") {
+        if (meta.type === "half") {
+          if (courtId) s.halves.add(courtId);
+        } else if (meta.type === "full") {
+          s.full = true;
+        } else if (meta.type === "cricket") {
+          s.cricket = true;
+        }
+      }
+      // pending/open stays only in s.bookings for visibility
     });
   });
+
   return m;
 }
 
+/* ---------- availability check ---------- */
 function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   const [start] = startSlotId.split("-");
   const [hh, mm] = start.split(":").map(Number);
@@ -295,8 +287,8 @@ const cid = $("#c-id");
 const cwhen = $("#c-when");
 const ccourt = $("#c-court");
 const camount = $("#c-amount");
+const confirmWA = $("#confirmWA");
 
-// NEW refs for updated UI
 const weekStrip      = document.getElementById('weekStrip');
 const timeBucketTabs = document.getElementById('timeBucketTabs');
 const timeChips      = document.getElementById('timeChips');
@@ -394,18 +386,12 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- Week strip (shows -3..+3 days and centers active date) ---------- */
+/* ---------- Week strip ---------- */
 function buildWeekStrip(baseDateISO) {
   if (!weekStrip) return;
-
-  // center on selectedDate if provided, otherwise use baseDateISO or today
-  const centerDate = baseDateISO ? new Date(baseDateISO) : (selectedDate ? new Date(selectedDate) : new Date());
-  const base = new Date(centerDate.getFullYear(), centerDate.getMonth(), centerDate.getDate());
-
+  const base = baseDateISO ? new Date(baseDateISO) : new Date();
   weekStrip.innerHTML = '';
-
-  const before = 3;
-  for (let i = -before; i <= (6 - before); i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(base);
     d.setDate(base.getDate() + i);
     const iso = fmtDateISO(d);
@@ -416,25 +402,17 @@ function buildWeekStrip(baseDateISO) {
       'px-3','py-2','rounded-xl','text-sm','border',
       isActive ? 'bg-emerald-600 text-white' : 'bg-white text-gray-800'
     ].join(' ');
-    btn.setAttribute('data-date', iso);
     btn.textContent = label;
     addTap(btn, () => {
       selectedDate = iso;
       if (dateInput) dateInput.value = iso;
       hide(confirmCard);
       timelineSelection = new Set();
-      buildWeekStrip(selectedDate);
       renderAll();
+      buildWeekStrip(selectedDate);
     });
     weekStrip.appendChild(btn);
-    if (isActive) {
-      setTimeout(() => {
-        try { btn.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' }); } catch(e){ /* ignore */ }
-      }, 60);
-    }
   }
-  weekStrip.style.paddingLeft = '6px';
-  weekStrip.style.paddingRight = '6px';
 }
 
 /* ---------- Duration control ---------- */
@@ -478,10 +456,9 @@ durationPlus?.addEventListener('click', () => {
     const occupancy = window.__GODsTurf?.occupancyMap || {};
     const targetCourt = selectedCourt;
     const newRangeStart = ALL_SLOTS[startIdx].id;
-    const newRangeId = makeRangeIdFromStartAndDuration(newRangeStart, selectedDurationMins);
     const check = isRangeAvailableFor(occupancy, newRangeStart, selectedDurationMins, targetCourt);
     if (!check.allowed) {
-      selectedDurationMins -= 30;
+      selectedDurationMins -= 30; // revert
       syncDurationDisplay();
       toast("Can't extend selection: " + (check.reason || "unavailable"), { error: true });
       return;
@@ -496,7 +473,7 @@ durationPlus?.addEventListener('click', () => {
   }
 });
 
-/* ---------- render helpers (selection normalized updates duration) ---------- */
+/* ---------- render helpers ---------- */
 function normalizeSelectionToContiguous() {
   if (!timelineSelection.size) return;
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
@@ -575,6 +552,7 @@ function renderTimeBuckets(buckets, occupancy) {
   });
 }
 
+/* ---------- renderTimeChips (fixed) ---------- */
 function renderTimeChips(buckets, occupancy) {
   if (!timeChips) return;
   const bucketItems = buckets[selectedBucket] || [];
@@ -603,11 +581,23 @@ function renderTimeChips(buckets, occupancy) {
     const past = isSlotInPast(slot.id, selectedDate);
     const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
+    // determine whether there exists any confirmed booking in this slot
+    const hasConfirmed = (occ.bookings || []).some(b => ((b.status||'').toLowerCase() === 'confirmed'));
+
     let state = 'available';
     if (past) state = 'past';
-    else if (occ.full || occ.cricket) state = 'blocked';
-    else if (occ.halves && occ.halves.size >= 1) state = 'partial';
+    else if (hasConfirmed && (occ.full || occ.cricket || (occ.halves && occ.halves.size >= 1))) {
+      // blocked only if there's a confirmed booking occupying it
+      state = 'blocked';
+    } else if (!hasConfirmed && (occ.halves && occ.halves.size >= 1)) {
+      // partial but not confirmed (e.g., pending) — show partial to indicate contention,
+      // but do not prevent wishlist
+      state = 'partial';
+    } else {
+      state = 'available';
+    }
 
+    // apply classes for visual states
     if (state === 'past') {
       btn.classList.add('slot-past');
       btn.disabled = true;
@@ -616,8 +606,10 @@ function renderTimeChips(buckets, occupancy) {
       btn.disabled = true;
     } else if (state === 'partial') {
       btn.classList.add('slot-partial');
+      btn.disabled = false;
     } else {
       btn.classList.add('bg-white');
+      btn.disabled = false;
     }
 
     const timeLabel = document.createElement('div');
@@ -639,10 +631,14 @@ function renderTimeChips(buckets, occupancy) {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
 
-      if (btn.disabled) {
-        if (state === 'blocked') {
-          openWishlistModal(slot, null);
-        }
+      // If blocked due to confirmed booking, do nothing (no wishlist)
+      if (btn.disabled && state === 'blocked') {
+        return;
+      }
+
+      // If blocked but not confirmed (e.g., partial/pending), allow wishlist modal
+      if (btn.disabled && state !== 'blocked') {
+        openWishlistModal(slot, null);
         return;
       }
 
@@ -836,10 +832,10 @@ function validateModalFields() {
   return { ok:true, name, phone };
 }
 
-closeModal?.addEventListener('click', closeModalFn);
-mCancel?.addEventListener('click', closeModalFn);
+closeModal?.addEventListener("click", closeModalFn);
+mCancel?.addEventListener("click", closeModalFn);
 
-mConfirm?.addEventListener('click', async () => {
+mConfirm?.addEventListener("click", async () => {
   const v = validateModalFields();
   if (!v.ok) {
     if (v.reason === "name") toast("Please enter your name.", { error: true });
