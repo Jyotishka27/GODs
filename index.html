@@ -10,17 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- optional external CSS for device-specific overrides (kept as before) -->
   <link rel="stylesheet" href="css/mobile.css" media="only screen and (max-width: 640px)">
   <link rel="stylesheet" href="css/desktop.css" media="only screen and (min-width: 641px)">
-
-  <style>
-    /* small utility to keep timeline items consistent when inline-styled elsewhere */
-    .timeline-grid { display:flex; gap:0.5rem; align-items:flex-start; padding:0.25rem; }
-    .slot-btn { border:1px solid #e5e7eb; border-radius:0.75rem; padding:0.5rem; background:white; min-width:72px; text-align:left; }
-    .hero-height { height: 320px; } /* safe mobile hero height, desktop will expand via responsive CSS */
-    @media (min-width: 768px) { .hero-height { height:420px; } }
-  </style>
 </head>
 
 <body class="bg-white text-gray-900">
@@ -60,24 +51,13 @@
   </section>
 
   <section id="book" class="max-w-6xl mx-auto px-4 py-6">
-    <!-- make it single-column on mobile, 3 columns on md+ -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-      <!-- LEFT: controls + courts (spans 2 cols on md) -->
       <div class="md:col-span-2 space-y-3 md:space-y-4">
-        <!-- Date + pitch -->
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
           <label for="date" class="text-[11px] md:text-xs text-gray-600 block mb-1">Choose date</label>
           <input id="date" type="date" class="w-full md:w-auto border rounded-xl px-2 py-1.5 md:px-3 md:py-2 text-sm md:text-base" />
 
-          <!-- Week strip (UI only; JS will sync with #date) -->
-          <div id="weekStrip" class="mt-2 flex gap-2 overflow-x-auto pb-1 -mx-1 md:mx-0 px-1">
-            <!-- example pills (JS will populate in your app) -->
-            <button class="px-2 py-1.5 rounded-xl text-[12px] md:text-sm border bg-emerald-600 text-white whitespace-nowrap">Fri, 28 Nov</button>
-            <button class="px-2 py-1.5 rounded-xl text-[12px] md:text-sm border bg-white text-gray-800 whitespace-nowrap">Sat, 29 Nov</button>
-            <button class="px-2 py-1.5 rounded-xl text-[12px] md:text-sm border bg-white text-gray-800 whitespace-nowrap">Sun, 30 Nov</button>
-            <button class="px-2 py-1.5 rounded-xl text-[12px] md:text-sm border bg-white text-gray-800 whitespace-nowrap">Mon, 1 Dec</button>
-            <!-- More days will be injected by JS -->
-          </div>
+          <div id="weekStrip" class="mt-2 flex gap-2 overflow-x-auto pb-1 -mx-1 md:mx-0 px-1"></div>
 
           <div id="pitchSelectorContainer" class="mt-3 text-sm text-gray-600">
             <p class="text-[12px] md:text-sm">Select a court from the grid below to view availability and book.</p>
@@ -95,39 +75,13 @@
           </div>
         </div>
 
-        <!-- Time + courts -->
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold mb-2 text-sm md:text-base">Choose time &amp; court</h3>
 
-          <!-- Time of day pills -->
-          <div id="timeBucketTabs" class="mb-2 flex flex-wrap gap-2">
-            <!-- sample pills — your JS will populate -->
-            <button class="px-2 py-1.5 rounded-full text-[12px] md:text-sm border flex-1 bg-white">
-              <span class="truncate">Midnight</span>
-              <span class="ml-2 text-[10px] md:text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">0/12</span>
-            </button>
-            <button class="px-2 py-1.5 rounded-full text-[12px] md:text-sm border flex-1 bg-emerald-600 text-white">
-              <span class="truncate">Morning</span>
-              <span class="ml-2 text-[10px] md:text-xs bg-white/20 text-white px-2 py-0.5 rounded-full">0/12</span>
-            </button>
-          </div>
+          <div id="timeBucketTabs" class="mb-2 flex flex-wrap gap-2"></div>
 
-          <!-- Time chips (30-min starts) -->
-          <div id="timeChips" class="timeline-container rounded-md overflow-x-auto" role="region" aria-live="polite">
-            <div class="timeline-grid">
-              <!-- sample slot buttons; your JS will populate actual slots -->
-              <button class="slot-btn slot-past" disabled>
-                <div style="font-size:13px">6:00 AM</div>
-                <div style="font-size:11px;opacity:.7">06:00</div>
-              </button>
-              <button class="slot-btn slot-past" disabled>
-                <div style="font-size:13px">6:30 AM</div>
-                <div style="font-size:11px;opacity:.7">06:30</div>
-              </button>
-            </div>
-          </div>
+          <div id="timeChips" class="timeline-container rounded-md overflow-x-auto" role="region" aria-live="polite"></div>
 
-          <!-- Duration control -->
           <div id="durationControl" class="mt-3 flex items-center gap-3 text-sm">
             <span class="text-gray-600 text-[12px]">Duration</span>
             <div class="inline-flex items-center border rounded-xl overflow-hidden">
@@ -137,21 +91,9 @@
             </div>
           </div>
 
-          <!-- Courts grid -->
-          <div id="courtsGrid" class="mt-3 grid sm:grid-cols-2 gap-3">
-            <!-- sample card -->
-            <div class="border rounded-xl p-3 flex flex-col gap-2 bg-white hover:border-emerald-500 transition">
-              <div class="font-semibold text-sm">Half Ground — Left</div>
-              <div class="text-xs text-gray-500">Default: 60 mins · ₹1500 · 55×90</div>
-              <div class="mt-2 flex flex-wrap gap-2">
-                <button class="px-3 py-1.5 rounded-xl text-sm bg-emerald-600 text-white">Selected</button>
-              </div>
-            </div>
-            <!-- more cards populated by JS -->
-          </div>
+          <div id="courtsGrid" class="mt-3 grid sm:grid-cols-2 gap-3"></div>
         </div>
 
-        <!-- Booking created confirmation -->
         <div id="confirmCard" class="hidden p-3 md:p-4 border rounded-2xl bg-emerald-50 border-emerald-200" role="status" aria-live="polite">
           <h4 class="font-semibold mb-1">Booking created</h4>
           <p class="text-sm text-emerald-900">Show this at the counter or message us for payment to confirm.</p>
@@ -168,9 +110,7 @@
         </div>
       </div>
 
-      <!-- RIGHT: booking summary + info (desktop) -->
       <aside class="hidden md:block md:space-y-4">
-        <!-- Booking summary (desktop) -->
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold mb-2 text-sm md:text-base">Booking Summary</h3>
           <div class="space-y-1 text-sm text-[13px]">
@@ -189,11 +129,7 @@
 
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold">Facilities &amp; Amenities</h3>
-          <div id="amenities" class="mt-3 flex flex-wrap gap-2">
-            <!-- JS will fill -->
-            <span class="px-3 py-1 rounded-full border text-sm">Floodlights</span>
-            <span class="px-3 py-1 rounded-full border text-sm">Parking</span>
-          </div>
+          <div id="amenities" class="mt-3 flex flex-wrap gap-2"></div>
           <div class="mt-4 text-sm text-gray-600">
             <p><strong>Hours:</strong> 24 × 7</p>
             <p><strong>Buffer:</strong> 10 mins between slots</p>
@@ -213,7 +149,6 @@
     </div>
   </section>
 
-  <!-- Mobile sticky summary (visible only on small screens) -->
   <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 p-3 pointer-events-auto">
     <div class="bg-white border rounded-2xl p-3 shadow-lg">
       <div class="flex items-center justify-between">
@@ -229,14 +164,13 @@
     </div>
   </div>
 
-  <section id="rules" class="max-w-6xl mx-auto px-4 pb-24 md:pb-8"> <!-- extra bottom padding so content isn't hidden under sticky bar -->
+  <section id="rules" class="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
     <div class="p-4 border rounded-2xl bg-white">
       <h3 class="font-semibold mb-2">Rules</h3>
       <ul id="rulesList" class="space-y-2 text-sm"></ul>
     </div>
   </section>
 
-  <!-- modal -->
   <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
     <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
       <div class="flex items-center justify-between mb-2">
@@ -289,42 +223,8 @@
       const email = document.getElementById('emailLink');
       if (email && !email.href) email.href = 'mailto:godsturf@gmail.com';
     })();
-
-    (function(){
-      const modal = document.getElementById('modal');
-      const closeBtn = document.getElementById('closeModal');
-      const cancelBtn = document.getElementById('m-cancel');
-      function hideModal(){ if(modal) modal.classList.add('hidden'); document.body.style.overflow = ''; }
-      if(closeBtn) closeBtn.addEventListener('click', hideModal);
-      if(cancelBtn) cancelBtn.addEventListener('click', hideModal);
-      document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && modal && !modal.classList.contains('hidden')) hideModal(); });
-    })();
-
-    // small glue for mobile sticky summary buttons
-    (function() {
-      const detailsBtn = document.getElementById('summaryViewMobile');
-      const summaryTotal = document.getElementById('summaryTotalMobile');
-      const desktopTotal = document.getElementById('summaryTotal');
-      // keep mobile total in sync if desktop total updates (your JS updates desktop one; mirror it)
-      if (desktopTotal && summaryTotal) {
-        // simple observer replaced with interval for max compatibility with existing scripts
-        setInterval(() => {
-          if (desktopTotal.textContent !== summaryTotal.textContent) {
-            summaryTotal.textContent = desktopTotal.textContent;
-          }
-        }, 500);
-      }
-      if (detailsBtn) {
-        detailsBtn.addEventListener('click', () => {
-          // scroll to booking summary (desktop aside is hidden on mobile so this reveals the summary block above)
-          const bookSection = document.getElementById('book');
-          if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
-        });
-      }
-    })();
   </script>
 
-  <!-- main ing logic (unchanged file path) -->
   <script type="module" src="./scripts/app.js"></script>
 
   <footer class="border-t mt-8">
@@ -352,20 +252,6 @@
       }
       window.addEventListener('resize', updateMobileCta);
       updateMobileCta();
-
-      const mobileBook = document.getElementById('bookBtnMobile');
-      if (mobileBook) {
-        mobileBook.addEventListener('click', () => {
-          const modal = document.getElementById('modal');
-          if (modal) {
-            modal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-          } else {
-            const book = document.getElementById('book');
-            if (book) book.scrollIntoView({ behavior: 'smooth' });
-          }
-        });
-      }
     })();
   </script>
 </body>
