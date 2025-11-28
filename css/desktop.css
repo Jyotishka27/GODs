@@ -93,13 +93,22 @@ body {
 
 /* ---- STATES ---- */
 
-.slot-selected {
-  background: var(--accent);
-  color: #ffffff;
+/* stronger selector so other utility classes (e.g. bg-white) don't override */
+.slot-btn.slot-selected,
+.slot-selected.slot-btn {
+  background: var(--accent) !important;
+  color: #ffffff !important;
   border-color: var(--accent-dark) !important;
-  box-shadow: 0 0 0 2px rgba(16,185,129,0.3);
+  box-shadow: 0 0 0 2px rgba(16,185,129,0.3) !important;
 }
 
+/* ensure child text inherits color */
+.slot-btn.slot-selected > div,
+.slot-selected > div {
+  color: inherit !important;
+}
+
+/* keep blocked/past/partial visible and not accidentally overridden */
 .slot-past {
   background: #f8fafc;
   color: #9ca3af;
@@ -154,3 +163,6 @@ body {
   padding: 0.5rem 0.9rem;
   font-size: 15px;
 }
+
+/* Small polish to ensure the first chip isn't hidden under container padding */
+.timeline-container { padding-left: 8px; }
