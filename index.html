@@ -10,8 +10,17 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
 
+  <!-- device-specific CSS -->
   <link rel="stylesheet" href="css/mobile.css" media="only screen and (max-width: 640px)">
   <link rel="stylesheet" href="css/desktop.css" media="only screen and (min-width: 641px)">
+
+  <style>
+    /* light inline helpers */
+    .timeline-grid { display:flex; gap:0.5rem; align-items:flex-start; padding:0.25rem; }
+    .slot-btn { border:1px solid #e5e7eb; border-radius:0.75rem; padding:0.5rem; background:white; min-width:72px; text-align:left; }
+    .hero-height { height: 320px; }
+    @media (min-width: 768px) { .hero-height { height:420px; } }
+  </style>
 </head>
 
 <body class="bg-white text-gray-900">
@@ -59,9 +68,7 @@
 
           <div id="weekStrip" class="mt-2 flex gap-2 overflow-x-auto pb-1 -mx-1 md:mx-0 px-1"></div>
 
-          <div id="pitchSelectorContainer" class="mt-3 text-sm text-gray-600">
-            <p class="text-[12px] md:text-sm">Select a court from the grid below to view availability and book.</p>
-          </div>
+          <div id="pitchSelectorContainer" class="mt-3 text-sm text-gray-600"></div>
 
           <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
             <div class="px-2 py-1.5 md:px-3 md:py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
@@ -110,6 +117,7 @@
         </div>
       </div>
 
+      <!-- desktop aside -->
       <aside class="hidden md:block md:space-y-4">
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
           <h3 class="font-semibold mb-2 text-sm md:text-base">Booking Summary</h3>
@@ -149,6 +157,7 @@
     </div>
   </section>
 
+  <!-- Mobile sticky summary -->
   <div class="md:hidden fixed bottom-0 left-0 right-0 z-50 p-3 pointer-events-auto">
     <div class="bg-white border rounded-2xl p-3 shadow-lg">
       <div class="flex items-center justify-between">
@@ -171,6 +180,7 @@
     </div>
   </section>
 
+  <!-- modal -->
   <div id="modal" class="hidden fixed inset-0 bg-black/50 grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="m-title" aria-describedby="m-when">
     <div class="bg-white rounded-2xl max-w-md w-full p-4 overflow-auto">
       <div class="flex items-center justify-between mb-2">
@@ -223,6 +233,35 @@
       const email = document.getElementById('emailLink');
       if (email && !email.href) email.href = 'mailto:godsturf@gmail.com';
     })();
+
+    (function(){
+      const modal = document.getElementById('modal');
+      const closeBtn = document.getElementById('closeModal');
+      const cancelBtn = document.getElementById('m-cancel');
+      function hideModal(){ if(modal) modal.classList.add('hidden'); document.body.style.overflow = ''; }
+      if(closeBtn) closeBtn.addEventListener('click', hideModal);
+      if(cancelBtn) cancelBtn.addEventListener('click', hideModal);
+      document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && modal && !modal.classList.contains('hidden')) hideModal(); });
+    })();
+
+    (function() {
+      const detailsBtn = document.getElementById('summaryViewMobile');
+      const desktopTotal = document.getElementById('summaryTotal');
+      const summaryTotal = document.getElementById('summaryTotalMobile');
+      if (desktopTotal && summaryTotal) {
+        setInterval(() => {
+          if (desktopTotal.textContent !== summaryTotal.textContent) {
+            summaryTotal.textContent = desktopTotal.textContent;
+          }
+        }, 500);
+      }
+      if (detailsBtn) {
+        detailsBtn.addEventListener('click', () => {
+          const bookSection = document.getElementById('book');
+          if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
+        });
+      }
+    })();
   </script>
 
   <script type="module" src="./scripts/app.js"></script>
@@ -238,21 +277,5 @@
   </footer>
 
   <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
-
-  <script>
-    (function() {
-      function updateMobileCta() {
-        const cta = document.getElementById('mobileingCta');
-        if (!cta) return;
-        if (window.innerWidth <= 420) {
-          cta.classList.remove('hidden');
-        } else {
-          cta.classList.add('hidden');
-        }
-      }
-      window.addEventListener('resize', updateMobileCta);
-      updateMobileCta();
-    })();
-  </script>
 </body>
 </html>
