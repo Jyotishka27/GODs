@@ -51,19 +51,44 @@ function toast(msg, opts = {}) {
   } catch (e) { /* ignore */ }
 }
 
+/* ---------- improved addTap (touch-friendly; does not block scroll) ---------- */
+// Only fire handler when a real tap (no meaningful move) occurs. Keep click fallback.
 function addTap(el, handler) {
   if (!el) return;
-  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-  if (isTouch) {
-    el.addEventListener('touchstart', function touchHandler(e){
-      e.preventDefault();
-      try { handler(e); } catch(err){ console.error(err); }
-    }, { passive: false });
-  } else {
-    el.addEventListener('click', function clickHandler(e){
-      try { handler(e); } catch(err){ console.error(err); }
-    });
+  let startX = 0, startY = 0, moved = false, tracking = false;
+
+  function onTouchStart(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    tracking = true;
+    moved = false;
+    startX = t.clientX;
+    startY = t.clientY;
   }
+  function onTouchMove(e) {
+    if (!tracking) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    if (Math.abs(t.clientX - startX) > 10 || Math.abs(t.clientY - startY) > 10) {
+      moved = true;
+    }
+  }
+  function onTouchEnd(e) {
+    if (!tracking) return;
+    tracking = false;
+    if (!moved) {
+      try { handler(e); } catch(err){ console.error(err); }
+    }
+  }
+
+  el.addEventListener('touchstart', onTouchStart, { passive: true });
+  el.addEventListener('touchmove', onTouchMove, { passive: true });
+  el.addEventListener('touchend', onTouchEnd, { passive: true });
+
+  // click fallback for non-touch
+  el.addEventListener('click', function clickHandler(e){
+    try { handler(e); } catch(err){ console.error(err); }
+  });
 }
 
 /* ---------- debug: surface runtime errors into UI ---------- */
@@ -369,12 +394,18 @@ function bucketSlots(slots) {
   return buckets;
 }
 
-/* ---------- Week strip ---------- */
+/* ---------- Week strip (shows -3..+3 days and centers active date) ---------- */
 function buildWeekStrip(baseDateISO) {
   if (!weekStrip) return;
-  const base = baseDateISO ? new Date(baseDateISO) : new Date();
+
+  // center on selectedDate if provided, otherwise use baseDateISO or today
+  const centerDate = baseDateISO ? new Date(baseDateISO) : (selectedDate ? new Date(selectedDate) : new Date());
+  const base = new Date(centerDate.getFullYear(), centerDate.getMonth(), centerDate.getDate());
+
   weekStrip.innerHTML = '';
-  for (let i = 0; i < 7; i++) {
+
+  const before = 3;
+  for (let i = -before; i <= (6 - before); i++) {
     const d = new Date(base);
     d.setDate(base.getDate() + i);
     const iso = fmtDateISO(d);
@@ -385,17 +416,25 @@ function buildWeekStrip(baseDateISO) {
       'px-3','py-2','rounded-xl','text-sm','border',
       isActive ? 'bg-emerald-600 text-white' : 'bg-white text-gray-800'
     ].join(' ');
+    btn.setAttribute('data-date', iso);
     btn.textContent = label;
     addTap(btn, () => {
       selectedDate = iso;
       if (dateInput) dateInput.value = iso;
       hide(confirmCard);
       timelineSelection = new Set();
-      renderAll();
       buildWeekStrip(selectedDate);
+      renderAll();
     });
     weekStrip.appendChild(btn);
+    if (isActive) {
+      setTimeout(() => {
+        try { btn.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' }); } catch(e){ /* ignore */ }
+      }, 60);
+    }
   }
+  weekStrip.style.paddingLeft = '6px';
+  weekStrip.style.paddingRight = '6px';
 }
 
 /* ---------- Duration control ---------- */
@@ -414,7 +453,6 @@ durationMinus?.addEventListener('click', () => {
   ensureMinDuration();
   syncDurationDisplay();
 
-  // if there's an active selection, shrink it from the end
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
@@ -423,7 +461,7 @@ durationMinus?.addEventListener('click', () => {
     for (let i = startIdx; i < startIdx + neededSlots; i++) {
       if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
     }
-    renderAll(); // re-render to reflect new selection
+    renderAll();
   } else {
     updateSummaryFromSelection();
   }
@@ -433,7 +471,6 @@ durationPlus?.addEventListener('click', () => {
   selectedDurationMins += 30;
   syncDurationDisplay();
 
-  // if there's an active selection, try to expand it to the right
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
@@ -444,7 +481,7 @@ durationPlus?.addEventListener('click', () => {
     const newRangeId = makeRangeIdFromStartAndDuration(newRangeStart, selectedDurationMins);
     const check = isRangeAvailableFor(occupancy, newRangeStart, selectedDurationMins, targetCourt);
     if (!check.allowed) {
-      selectedDurationMins -= 30; // revert
+      selectedDurationMins -= 30;
       syncDurationDisplay();
       toast("Can't extend selection: " + (check.reason || "unavailable"), { error: true });
       return;
@@ -459,14 +496,13 @@ durationPlus?.addEventListener('click', () => {
   }
 });
 
-/* ---------- render helpers ---------- */
+/* ---------- render helpers (selection normalized updates duration) ---------- */
 function normalizeSelectionToContiguous() {
   if (!timelineSelection.size) return;
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
   const min = indices[0], max = indices[indices.length - 1];
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
-  // auto-update duration based on selection count
   const count = (max - min) + 1;
   selectedDurationMins = Math.max(MIN_BOOKING_MINS, count * 30);
   syncDurationDisplay();
@@ -572,7 +608,6 @@ function renderTimeChips(buckets, occupancy) {
     else if (occ.full || occ.cricket) state = 'blocked';
     else if (occ.halves && occ.halves.size >= 1) state = 'partial';
 
-    // apply classes for visual states
     if (state === 'past') {
       btn.classList.add('slot-past');
       btn.disabled = true;
@@ -585,7 +620,6 @@ function renderTimeChips(buckets, occupancy) {
       btn.classList.add('bg-white');
     }
 
-    // time text
     const timeLabel = document.createElement('div');
     timeLabel.textContent = to12FromHHMM(slot.start);
     timeLabel.style.fontSize = '13px';
@@ -596,11 +630,10 @@ function renderTimeChips(buckets, occupancy) {
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
-    // if this slot is already selected in state, mark it selected
     if (timelineSelection.has(slot.id)) {
       btn.classList.remove('bg-white','slot-partial');
       btn.classList.add('slot-selected');
-      btn.disabled = false; // ensure selectable visually
+      btn.disabled = false;
     }
 
     btn.addEventListener('click', (e) => {
@@ -608,25 +641,20 @@ function renderTimeChips(buckets, occupancy) {
 
       if (btn.disabled) {
         if (state === 'blocked') {
-          // allow wishlist on blocked slots
           openWishlistModal(slot, null);
         }
         return;
       }
 
       const sid = slot.id;
-
-      // toggle this slot
       if (timelineSelection.has(sid)) {
         timelineSelection.delete(sid);
       } else {
         timelineSelection.add(sid);
       }
 
-      // keep selection contiguous and update duration
       normalizeSelectionToContiguous();
 
-      // re-paint all buttons in this grid
       grid.querySelectorAll('button[data-slot-id]').forEach(b => {
         const id = b.getAttribute('data-slot-id');
         if (timelineSelection.has(id)) {
@@ -640,7 +668,6 @@ function renderTimeChips(buckets, occupancy) {
         }
       });
 
-      // update summary card
       updateSummaryFromSelection();
     });
 
@@ -678,7 +705,6 @@ function renderCourtsGrid(occupancy) {
       const p = document.getElementById('selectedPrice');
       if (s) s.textContent = meta.label + (meta.dims ? ` · ${meta.dims}` : '');
       if (p) p.textContent = `₹${selectedAmount}`;
-      // re-render but keep timelineSelection (so selection does not reset on court change)
       renderAll();
     });
 
@@ -810,10 +836,10 @@ function validateModalFields() {
   return { ok:true, name, phone };
 }
 
-closeModal?.addEventListener("click", closeModalFn);
-mCancel?.addEventListener("click", closeModalFn);
+closeModal?.addEventListener('click', closeModalFn);
+mCancel?.addEventListener('click', closeModalFn);
 
-mConfirm?.addEventListener("click", async () => {
+mConfirm?.addEventListener('click', async () => {
   const v = validateModalFields();
   if (!v.ok) {
     if (v.reason === "name") toast("Please enter your name.", { error: true });
@@ -966,7 +992,6 @@ function initPitchSelector() {
 window.addEventListener('DOMContentLoaded', () => {
   initPitchSelector();
 
-  // Set selected pitch display
   const s = document.getElementById('selectedPitch');
   const p = document.getElementById('selectedPrice');
   if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
@@ -976,14 +1001,12 @@ window.addEventListener('DOMContentLoaded', () => {
   syncDurationDisplay();
   renderAll();
 
-  // Wire mobile Details/Book buttons if present
   const detailsBtn = document.getElementById('summaryViewMobile');
   if (detailsBtn) detailsBtn.addEventListener('click', () => {
     const bookSection = document.getElementById('book');
     if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
   });
 
-  // sync desktop total -> mobile total periodically (keeps mobile widget in sync with other scripts)
   if (summaryTotal && summaryTotalMobile) {
     setInterval(() => {
       if (summaryTotal.textContent !== summaryTotalMobile.textContent) summaryTotalMobile.textContent = summaryTotal.textContent;
