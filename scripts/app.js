@@ -1,4 +1,4 @@
-// scripts/app.js (updated for new UI: week strip, time buckets, time chips, duration, courts grid, summary)
+// scripts/app.js (updated: duration <-> timeline sync, slot styles, mobile book button wiring)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -270,7 +270,6 @@ const cid = $("#c-id");
 const cwhen = $("#c-when");
 const ccourt = $("#c-court");
 const camount = $("#c-amount");
-const confirmWA = $("#confirmWA");
 
 // NEW refs for updated UI
 const weekStrip      = document.getElementById('weekStrip');
@@ -287,6 +286,8 @@ const summaryCourt    = document.getElementById('summaryCourt');
 const summaryDuration = document.getElementById('summaryDuration');
 const summaryTotal    = document.getElementById('summaryTotal');
 const summaryBookBtn  = document.getElementById('summaryBookBtn');
+const summaryBookBtnMobile = document.getElementById('summaryBookBtnMobile');
+const summaryTotalMobile = document.getElementById('summaryTotalMobile');
 
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey("5A");
@@ -403,18 +404,59 @@ function syncDurationDisplay() {
   const hrs = selectedDurationMins / 60;
   durationDisplay.textContent = hrs + ' hr' + (hrs > 1 ? 's' : '');
 }
+function ensureMinDuration() {
+  if (selectedDurationMins < MIN_BOOKING_MINS) selectedDurationMins = MIN_BOOKING_MINS;
+}
 
 durationMinus?.addEventListener('click', () => {
   if (selectedDurationMins <= MIN_BOOKING_MINS) return;
   selectedDurationMins -= 30;
+  ensureMinDuration();
   syncDurationDisplay();
-  updateSummaryFromSelection();
+
+  // if there's an active selection, shrink it from the end
+  if (timelineSelection.size) {
+    const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
+    const startIdx = indices[0];
+    const neededSlots = Math.max(1, selectedDurationMins / 30);
+    timelineSelection = new Set();
+    for (let i = startIdx; i < startIdx + neededSlots; i++) {
+      if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
+    }
+    renderAll(); // re-render to reflect new selection
+  } else {
+    updateSummaryFromSelection();
+  }
 });
 
 durationPlus?.addEventListener('click', () => {
   selectedDurationMins += 30;
   syncDurationDisplay();
-  updateSummaryFromSelection();
+
+  // if there's an active selection, try to expand it to the right
+  if (timelineSelection.size) {
+    const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
+    const startIdx = indices[0];
+    const neededSlots = Math.max(1, selectedDurationMins / 30);
+    const occupancy = window.__GODsTurf?.occupancyMap || {};
+    const targetCourt = selectedCourt;
+    const newRangeStart = ALL_SLOTS[startIdx].id;
+    const newRangeId = makeRangeIdFromStartAndDuration(newRangeStart, selectedDurationMins);
+    const check = isRangeAvailableFor(occupancy, newRangeStart, selectedDurationMins, targetCourt);
+    if (!check.allowed) {
+      selectedDurationMins -= 30; // revert
+      syncDurationDisplay();
+      toast("Can't extend selection: " + (check.reason || "unavailable"), { error: true });
+      return;
+    }
+    timelineSelection = new Set();
+    for (let i = startIdx; i < startIdx + neededSlots; i++) {
+      if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
+    }
+    renderAll();
+  } else {
+    updateSummaryFromSelection();
+  }
 });
 
 /* ---------- render helpers ---------- */
@@ -424,6 +466,10 @@ function normalizeSelectionToContiguous() {
   const min = indices[0], max = indices[indices.length - 1];
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
+  // auto-update duration based on selection count
+  const count = (max - min) + 1;
+  selectedDurationMins = Math.max(MIN_BOOKING_MINS, count * 30);
+  syncDurationDisplay();
 }
 
 async function renderAll() {
@@ -486,7 +532,7 @@ function renderTimeBuckets(buckets, occupancy) {
     `;
     addTap(btn, () => {
       selectedBucket = t.key;
-      timelineSelection = new Set();
+      timelineSelection = new Set(); // switching buckets clears the timeline selection (intentional)
       renderAll();
     });
     timeBucketTabs.appendChild(btn);
@@ -526,6 +572,7 @@ function renderTimeChips(buckets, occupancy) {
     else if (occ.full || occ.cricket) state = 'blocked';
     else if (occ.halves && occ.halves.size >= 1) state = 'partial';
 
+    // apply classes for visual states
     if (state === 'past') {
       btn.classList.add('slot-past');
       btn.disabled = true;
@@ -538,6 +585,7 @@ function renderTimeChips(buckets, occupancy) {
       btn.classList.add('bg-white');
     }
 
+    // time text
     const timeLabel = document.createElement('div');
     timeLabel.textContent = to12FromHHMM(slot.start);
     timeLabel.style.fontSize = '13px';
@@ -548,51 +596,57 @@ function renderTimeChips(buckets, occupancy) {
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
-        btn.addEventListener('click', (e) => {
-        e.preventDefault();
-  
-        if (btn.disabled) {
-          if (state === 'blocked') {
-            // allow wishlist on blocked slots
-            openWishlistModal(slot, null);
-          }
-          return;
+    // if this slot is already selected in state, mark it selected
+    if (timelineSelection.has(slot.id)) {
+      btn.classList.remove('bg-white','slot-partial');
+      btn.classList.add('slot-selected');
+      btn.disabled = false; // ensure selectable visually
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+
+      if (btn.disabled) {
+        if (state === 'blocked') {
+          // allow wishlist on blocked slots
+          openWishlistModal(slot, null);
         }
-  
-        const sid = slot.id;
-  
-        // toggle this slot
-        if (timelineSelection.has(sid)) {
-          timelineSelection.delete(sid);
+        return;
+      }
+
+      const sid = slot.id;
+
+      // toggle this slot
+      if (timelineSelection.has(sid)) {
+        timelineSelection.delete(sid);
+      } else {
+        timelineSelection.add(sid);
+      }
+
+      // keep selection contiguous and update duration
+      normalizeSelectionToContiguous();
+
+      // re-paint all buttons in this grid
+      grid.querySelectorAll('button[data-slot-id]').forEach(b => {
+        const id = b.getAttribute('data-slot-id');
+        if (timelineSelection.has(id)) {
+          b.classList.remove('bg-white', 'slot-partial');
+          b.classList.add('slot-selected');
         } else {
-          timelineSelection.add(sid);
-        }
-  
-        // keep selection contiguous
-        normalizeSelectionToContiguous();
-  
-        // re-paint all buttons in this grid
-        grid.querySelectorAll('button[data-slot-id]').forEach(b => {
-          const id = b.getAttribute('data-slot-id');
-  
-          if (timelineSelection.has(id)) {
-            b.classList.remove('bg-white', 'slot-partial');
-            b.classList.add('slot-selected');
-          } else {
-            b.classList.remove('slot-selected');
-            if (!b.disabled) {
-              b.classList.add('bg-white');
-            }
+          b.classList.remove('slot-selected');
+          if (!b.disabled) {
+            b.classList.add('bg-white');
           }
-        });
-  
-        // update summary card
-        updateSummaryFromSelection();
+        }
       });
-    
-      grid.appendChild(btn);
+
+      // update summary card
+      updateSummaryFromSelection();
     });
-  }
+
+    grid.appendChild(btn);
+  });
+}
 
 function renderCourtsGrid(occupancy) {
   if (!courtsGrid) return;
@@ -624,6 +678,7 @@ function renderCourtsGrid(occupancy) {
       const p = document.getElementById('selectedPrice');
       if (s) s.textContent = meta.label + (meta.dims ? ` · ${meta.dims}` : '');
       if (p) p.textContent = `₹${selectedAmount}`;
+      // re-render but keep timelineSelection (so selection does not reset on court change)
       renderAll();
     });
 
@@ -644,7 +699,9 @@ function updateSummaryFromSelection() {
     if (summaryDuration) summaryDuration.textContent = '—';
     if (summaryCourt) summaryCourt.textContent = metaFor(selectedCourt).label || '—';
     if (summaryTotal) summaryTotal.textContent = '₹0';
+    if (summaryTotalMobile) summaryTotalMobile.textContent = '₹0';
     if (summaryBookBtn) summaryBookBtn.disabled = true;
+    if (summaryBookBtnMobile) summaryBookBtnMobile.disabled = true;
     return;
   }
 
@@ -663,10 +720,17 @@ function updateSummaryFromSelection() {
   if (summaryCourt) summaryCourt.textContent = metaFor(selectedCourt).label;
   const total = Math.round((selectedAmount || 0) * (selectedDurationMins/60));
   if (summaryTotal) summaryTotal.textContent = '₹' + total;
+  if (summaryTotalMobile) summaryTotalMobile.textContent = '₹' + total;
 
   if (summaryBookBtn) {
     summaryBookBtn.disabled = false;
     summaryBookBtn.onclick = () => {
+      openBookingModalWithRange(startSlot, selectedDurationMins);
+    };
+  }
+  if (summaryBookBtnMobile) {
+    summaryBookBtnMobile.disabled = false;
+    summaryBookBtnMobile.onclick = () => {
       openBookingModalWithRange(startSlot, selectedDurationMins);
     };
   }
@@ -890,7 +954,7 @@ dateInput?.addEventListener("change", ()=> {
 function initPitchSelector() {
   const container = document.getElementById("pitchSelectorContainer");
   if (!container) return;
-  
+
   container.innerHTML = `
     <div class="text-sm text-gray-600">
       <p>Select a court from the grid below to view availability and book.</p>
@@ -901,14 +965,28 @@ function initPitchSelector() {
 /* ---------- initialization ---------- */
 window.addEventListener('DOMContentLoaded', () => {
   initPitchSelector();
-  
+
   // Set selected pitch display
   const s = document.getElementById('selectedPitch');
   const p = document.getElementById('selectedPrice');
   if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
   if (p) p.textContent = `₹${selectedAmount}`;
-  
+
   buildWeekStrip(selectedDate);
   syncDurationDisplay();
   renderAll();
+
+  // Wire mobile Details/Book buttons if present
+  const detailsBtn = document.getElementById('summaryViewMobile');
+  if (detailsBtn) detailsBtn.addEventListener('click', () => {
+    const bookSection = document.getElementById('book');
+    if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
+  });
+
+  // sync desktop total -> mobile total periodically (keeps mobile widget in sync with other scripts)
+  if (summaryTotal && summaryTotalMobile) {
+    setInterval(() => {
+      if (summaryTotal.textContent !== summaryTotalMobile.textContent) summaryTotalMobile.textContent = summaryTotal.textContent;
+    }, 500);
+  }
 });
