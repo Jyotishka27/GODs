@@ -150,7 +150,6 @@ function metaFor(courtId) {
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
-/* ---------- expand booking to slots ---------- */
 function expandBookingToSlots(bookingRangeId) {
   if (!bookingRangeId || typeof bookingRangeId !== "string") return [];
   const [start, end] = bookingRangeId.split("-");
@@ -175,7 +174,6 @@ function expandBookingToSlots(bookingRangeId) {
   return out;
 }
 
-/* ---------- computeSlotOccupancy (fixed) ---------- */
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
   ALL_SLOTS.forEach(s => { m[s.id] = { halves: new Set(), full: false, cricket: false, bookings: [] }; });
@@ -186,39 +184,24 @@ function computeSlotOccupancy(bookingDocs) {
     const courtId = normalizedKey(rawCourt);
     const meta = metaFor(courtId);
     const covered = expandBookingToSlots(b.slotId);
-
-    // keep booking record always (for wishlist logic / info), but only
-    // mark occupation flags for CONFIRMED bookings.
     covered.forEach(slotId => {
       if (!m[slotId]) m[slotId] = { halves: new Set(), full: false, cricket: false, bookings: [] };
       const s = m[slotId];
       const copy = { ...b, court: courtId };
       s.bookings.push(copy);
-
-      // ignore cancelled bookings entirely
-      const status = (b.status || "").toLowerCase();
-      if (status === "cancelled" || status === "canceled") {
-        return;
+      if ((b.status || "").toLowerCase() === "cancelled") return;
+      if (meta.type === "half") {
+        if (courtId) s.halves.add(courtId);
+      } else if (meta.type === "full") {
+        s.full = true;
+      } else if (meta.type === "cricket") {
+        s.cricket = true;
       }
-
-      // only mark occupancy for confirmed bookings (so pending doesn't block)
-      if (status === "confirmed") {
-        if (meta.type === "half") {
-          if (courtId) s.halves.add(courtId);
-        } else if (meta.type === "full") {
-          s.full = true;
-        } else if (meta.type === "cricket") {
-          s.cricket = true;
-        }
-      }
-      // pending/open stays only in s.bookings for visibility
     });
   });
-
   return m;
 }
 
-/* ---------- availability check ---------- */
 function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   const [start] = startSlotId.split("-");
   const [hh, mm] = start.split(":").map(Number);
@@ -287,8 +270,9 @@ const cid = $("#c-id");
 const cwhen = $("#c-when");
 const ccourt = $("#c-court");
 const camount = $("#c-amount");
-const confirmWA = $("#confirmWA");
+const confirmWA = $("#confirmWA"); // ADDED: prevent ReferenceError if used
 
+// NEW refs for updated UI
 const weekStrip      = document.getElementById('weekStrip');
 const timeBucketTabs = document.getElementById('timeBucketTabs');
 const timeChips      = document.getElementById('timeChips');
@@ -431,6 +415,7 @@ durationMinus?.addEventListener('click', () => {
   ensureMinDuration();
   syncDurationDisplay();
 
+  // if there's an active selection, shrink it from the end
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
@@ -439,7 +424,7 @@ durationMinus?.addEventListener('click', () => {
     for (let i = startIdx; i < startIdx + neededSlots; i++) {
       if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
     }
-    renderAll();
+    renderAll(); // re-render to reflect new selection
   } else {
     updateSummaryFromSelection();
   }
@@ -449,6 +434,7 @@ durationPlus?.addEventListener('click', () => {
   selectedDurationMins += 30;
   syncDurationDisplay();
 
+  // if there's an active selection, try to expand it to the right
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
@@ -456,6 +442,7 @@ durationPlus?.addEventListener('click', () => {
     const occupancy = window.__GODsTurf?.occupancyMap || {};
     const targetCourt = selectedCourt;
     const newRangeStart = ALL_SLOTS[startIdx].id;
+    const newRangeId = makeRangeIdFromStartAndDuration(newRangeStart, selectedDurationMins);
     const check = isRangeAvailableFor(occupancy, newRangeStart, selectedDurationMins, targetCourt);
     if (!check.allowed) {
       selectedDurationMins -= 30; // revert
@@ -480,6 +467,7 @@ function normalizeSelectionToContiguous() {
   const min = indices[0], max = indices[indices.length - 1];
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
+  // auto-update duration based on selection count
   const count = (max - min) + 1;
   selectedDurationMins = Math.max(MIN_BOOKING_MINS, count * 30);
   syncDurationDisplay();
@@ -552,7 +540,7 @@ function renderTimeBuckets(buckets, occupancy) {
   });
 }
 
-/* ---------- renderTimeChips (fixed) ---------- */
+/* ---------- renderTimeChips (fixed repaint & confirmed-blocking) ---------- */
 function renderTimeChips(buckets, occupancy) {
   if (!timeChips) return;
   const bucketItems = buckets[selectedBucket] || [];
@@ -581,23 +569,20 @@ function renderTimeChips(buckets, occupancy) {
     const past = isSlotInPast(slot.id, selectedDate);
     const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
-    // determine whether there exists any confirmed booking in this slot
-    const hasConfirmed = (occ.bookings || []).some(b => ((b.status||'').toLowerCase() === 'confirmed'));
+    // Determine if there is ANY confirmed booking occupying this slot
+    const hasConfirmed = (occ.bookings || []).some(b => ((b.status || '').toLowerCase() === 'confirmed'));
 
+    // Determine visual state
     let state = 'available';
     if (past) state = 'past';
-    else if (hasConfirmed && (occ.full || occ.cricket || (occ.halves && occ.halves.size >= 1))) {
-      // blocked only if there's a confirmed booking occupying it
-      state = 'blocked';
-    } else if (!hasConfirmed && (occ.halves && occ.halves.size >= 1)) {
-      // partial but not confirmed (e.g., pending) — show partial to indicate contention,
-      // but do not prevent wishlist
-      state = 'partial';
-    } else {
-      state = 'available';
-    }
+    else if (hasConfirmed) state = 'blocked';           // confirmed => fully blocked (unselectable)
+    else if (occ.full || occ.cricket) state = 'blocked'; // non-confirmed full/cricket still shown blocked for safety
+    else if (occ.halves && occ.halves.size >= 1) state = 'partial';
+    else state = 'available';
 
-    // apply classes for visual states
+    // Apply classes and disabled flag
+    btn.disabled = false;
+    btn.classList.remove('slot-past','slot-blocked','slot-partial','slot-selected','bg-white');
     if (state === 'past') {
       btn.classList.add('slot-past');
       btn.disabled = true;
@@ -606,12 +591,11 @@ function renderTimeChips(buckets, occupancy) {
       btn.disabled = true;
     } else if (state === 'partial') {
       btn.classList.add('slot-partial');
-      btn.disabled = false;
     } else {
       btn.classList.add('bg-white');
-      btn.disabled = false;
     }
 
+    // Build label elements
     const timeLabel = document.createElement('div');
     timeLabel.textContent = to12FromHHMM(slot.start);
     timeLabel.style.fontSize = '13px';
@@ -622,26 +606,33 @@ function renderTimeChips(buckets, occupancy) {
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
+    // If already selected, show selected appearance (selection always wins visually)
     if (timelineSelection.has(slot.id)) {
       btn.classList.remove('bg-white','slot-partial');
       btn.classList.add('slot-selected');
-      btn.disabled = false;
+      btn.disabled = false; // selected must remain actionable (so user can deselect)
     }
 
+    // Click handling
     btn.addEventListener('click', (e) => {
       e.preventDefault();
 
-      // If blocked due to confirmed booking, do nothing (no wishlist)
-      if (btn.disabled && state === 'blocked') {
+      // If blocked due to confirmed booking, nothing happens
+      if (state === 'blocked' && !timelineSelection.has(slot.id)) {
+        // do nothing — confirmed bookings are unselectable and no wishlist allowed
         return;
       }
 
-      // If blocked but not confirmed (e.g., partial/pending), allow wishlist modal
-      if (btn.disabled && state !== 'blocked') {
+      // If past and disabled, do nothing
+      if (state === 'past') return;
+
+      // If partial (non-confirmed contention) and user tapped, open wishlist instead of direct selection
+      if (state === 'partial' && !timelineSelection.has(slot.id)) {
         openWishlistModal(slot, null);
         return;
       }
 
+      // Toggle selection for available or selected slots
       const sid = slot.id;
       if (timelineSelection.has(sid)) {
         timelineSelection.delete(sid);
@@ -649,21 +640,13 @@ function renderTimeChips(buckets, occupancy) {
         timelineSelection.add(sid);
       }
 
+      // Keep selection contiguous and update duration
       normalizeSelectionToContiguous();
 
-      grid.querySelectorAll('button[data-slot-id]').forEach(b => {
-        const id = b.getAttribute('data-slot-id');
-        if (timelineSelection.has(id)) {
-          b.classList.remove('bg-white', 'slot-partial');
-          b.classList.add('slot-selected');
-        } else {
-          b.classList.remove('slot-selected');
-          if (!b.disabled) {
-            b.classList.add('bg-white');
-          }
-        }
-      });
+      // Re-render the chips so occupancy-derived classes are recalculated (avoids stale colors)
+      renderTimeChips(buckets, occupancy);
 
+      // Update booking summary
       updateSummaryFromSelection();
     });
 
@@ -701,6 +684,7 @@ function renderCourtsGrid(occupancy) {
       const p = document.getElementById('selectedPrice');
       if (s) s.textContent = meta.label + (meta.dims ? ` · ${meta.dims}` : '');
       if (p) p.textContent = `₹${selectedAmount}`;
+      // re-render but keep timelineSelection (so selection does not reset on court change)
       renderAll();
     });
 
@@ -988,6 +972,7 @@ function initPitchSelector() {
 window.addEventListener('DOMContentLoaded', () => {
   initPitchSelector();
 
+  // Set selected pitch display
   const s = document.getElementById('selectedPitch');
   const p = document.getElementById('selectedPrice');
   if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
@@ -997,12 +982,14 @@ window.addEventListener('DOMContentLoaded', () => {
   syncDurationDisplay();
   renderAll();
 
+  // Wire mobile Details/Book buttons if present
   const detailsBtn = document.getElementById('summaryViewMobile');
   if (detailsBtn) detailsBtn.addEventListener('click', () => {
     const bookSection = document.getElementById('book');
     if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
   });
 
+  // sync desktop total -> mobile total periodically (keeps mobile widget in sync with other scripts)
   if (summaryTotal && summaryTotalMobile) {
     setInterval(() => {
       if (summaryTotal.textContent !== summaryTotalMobile.textContent) summaryTotalMobile.textContent = summaryTotal.textContent;
