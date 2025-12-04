@@ -1,4 +1,4 @@
-// scripts/app.js (updated: duration <-> timeline sync, slot styles, mobile book button wiring)
+// scripts/app.js (updated: court-specific timeline inside card, booked slots non-selectable)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -270,7 +270,7 @@ const cid = $("#c-id");
 const cwhen = $("#c-when");
 const ccourt = $("#c-court");
 const camount = $("#c-amount");
-const confirmWA = $("#confirmWA"); // ADDED: prevent ReferenceError if used
+const confirmWA = $("#confirmWA");
 
 // NEW refs for updated UI
 const weekStrip      = document.getElementById('weekStrip');
@@ -279,6 +279,7 @@ const timeChips      = document.getElementById('timeChips');
 const durationDisplay = document.getElementById('durationDisplay');
 const durationMinus   = document.getElementById('durationMinus');
 const durationPlus    = document.getElementById('durationPlus');
+const durationControl = document.getElementById('durationControl');
 const courtsGrid      = document.getElementById('courtsGrid');
 const summaryDate     = document.getElementById('summaryDate');
 const summaryStart    = document.getElementById('summaryStart');
@@ -289,6 +290,11 @@ const summaryTotal    = document.getElementById('summaryTotal');
 const summaryBookBtn  = document.getElementById('summaryBookBtn');
 const summaryBookBtnMobile = document.getElementById('summaryBookBtnMobile');
 const summaryTotalMobile = document.getElementById('summaryTotalMobile');
+
+// hide time UI at the original location; it will be moved into the selected court card
+if (timeBucketTabs) timeBucketTabs.classList.add('hidden');
+if (timeChips) timeChips.classList.add('hidden');
+if (durationControl) durationControl.classList.add('hidden');
 
 /* ---------- state ---------- */
 let selectedCourt = normalizedKey("5A");
@@ -415,7 +421,6 @@ durationMinus?.addEventListener('click', () => {
   ensureMinDuration();
   syncDurationDisplay();
 
-  // if there's an active selection, shrink it from the end
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
@@ -424,7 +429,7 @@ durationMinus?.addEventListener('click', () => {
     for (let i = startIdx; i < startIdx + neededSlots; i++) {
       if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
     }
-    renderAll(); // re-render to reflect new selection
+    renderAll();
   } else {
     updateSummaryFromSelection();
   }
@@ -434,22 +439,20 @@ durationPlus?.addEventListener('click', () => {
   selectedDurationMins += 30;
   syncDurationDisplay();
 
-  // if there's an active selection, try to expand it to the right
   if (timelineSelection.size) {
     const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i!==undefined).sort((a,b)=>a-b);
     const startIdx = indices[0];
-    const neededSlots = Math.max(1, selectedDurationMins / 30);
     const occupancy = window.__GODsTurf?.occupancyMap || {};
     const targetCourt = selectedCourt;
     const newRangeStart = ALL_SLOTS[startIdx].id;
-    const newRangeId = makeRangeIdFromStartAndDuration(newRangeStart, selectedDurationMins);
     const check = isRangeAvailableFor(occupancy, newRangeStart, selectedDurationMins, targetCourt);
     if (!check.allowed) {
-      selectedDurationMins -= 30; // revert
+      selectedDurationMins -= 30;
       syncDurationDisplay();
       toast("Can't extend selection: " + (check.reason || "unavailable"), { error: true });
       return;
     }
+    const neededSlots = Math.max(1, selectedDurationMins / 30);
     timelineSelection = new Set();
     for (let i = startIdx; i < startIdx + neededSlots; i++) {
       if (ALL_SLOTS[i]) timelineSelection.add(ALL_SLOTS[i].id);
@@ -467,7 +470,6 @@ function normalizeSelectionToContiguous() {
   const min = indices[0], max = indices[indices.length - 1];
   timelineSelection = new Set();
   for (let i = min; i <= max; i++) timelineSelection.add(ALL_SLOTS[i].id);
-  // auto-update duration based on selection count
   const count = (max - min) + 1;
   selectedDurationMins = Math.max(MIN_BOOKING_MINS, count * 30);
   syncDurationDisplay();
@@ -533,14 +535,14 @@ function renderTimeBuckets(buckets, occupancy) {
     `;
     addTap(btn, () => {
       selectedBucket = t.key;
-      timelineSelection = new Set(); // switching buckets clears the timeline selection (intentional)
+      timelineSelection = new Set();
       renderAll();
     });
     timeBucketTabs.appendChild(btn);
   });
 }
 
-/* ---------- renderTimeChips (fixed repaint & confirmed-blocking) ---------- */
+/* ---------- renderTimeChips (court-specific, booked slots disabled) ---------- */
 function renderTimeChips(buckets, occupancy) {
   if (!timeChips) return;
   const bucketItems = buckets[selectedBucket] || [];
@@ -563,76 +565,55 @@ function renderTimeChips(buckets, occupancy) {
 
   bucketItems.forEach(slot => {
     const btn = document.createElement('button');
-    btn.className = 'slot-btn';
+    btn.className = 'slot-btn bg-white';
     btn.setAttribute('data-slot-id', slot.id);
 
     const past = isSlotInPast(slot.id, selectedDate);
-    const occ = occupancy[slot.id] || { halves: new Set(), full:false, cricket:false, bookings: [] };
 
-    // Determine if there is ANY confirmed booking occupying this slot
-    const hasConfirmed = (occ.bookings || []).some(b => ((b.status || '').toLowerCase() === 'confirmed'));
-
-    // Determine visual state
-    let state = 'available';
-    if (past) state = 'past';
-    else if (hasConfirmed) state = 'blocked';           // confirmed => fully blocked (unselectable)
-    else if (occ.full || occ.cricket) state = 'blocked'; // non-confirmed full/cricket still shown blocked for safety
-    else if (occ.halves && occ.halves.size >= 1) state = 'partial';
-    else state = 'available';
-
-    // Apply classes and disabled flag
-    btn.disabled = false;
-    btn.classList.remove('slot-past','slot-blocked','slot-partial','slot-selected','bg-white');
-    if (state === 'past') {
-      btn.classList.add('slot-past');
-      btn.disabled = true;
-    } else if (state === 'blocked') {
-      btn.classList.add('slot-blocked');
-      btn.disabled = true;
-    } else if (state === 'partial') {
-      btn.classList.add('slot-partial');
+    let state;
+    if (past) {
+      state = 'past';
     } else {
-      btn.classList.add('bg-white');
+      const check = isRangeAvailableFor(
+        occupancy,
+        slot.id,
+        MIN_BOOKING_MINS,
+        selectedCourt
+      );
+      state = check.allowed ? 'available' : 'blocked';
     }
 
-    // Build label elements
+    btn.disabled = (state === 'past' || state === 'blocked');
+
+    btn.classList.remove('slot-past', 'slot-blocked', 'slot-selected');
+    if (state === 'past') {
+      btn.classList.add('slot-past');
+    } else if (state === 'blocked') {
+      btn.classList.add('slot-blocked');
+    }
+
     const timeLabel = document.createElement('div');
     timeLabel.textContent = to12FromHHMM(slot.start);
     timeLabel.style.fontSize = '13px';
+
     const sub = document.createElement('div');
     sub.textContent = slot.label.split('-')[0];
     sub.style.fontSize = '11px';
     sub.style.opacity = '0.7';
+
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
-    // If already selected, show selected appearance (selection always wins visually)
     if (timelineSelection.has(slot.id)) {
-      btn.classList.remove('bg-white','slot-partial');
+      btn.disabled = false;
+      btn.classList.remove('slot-past', 'slot-blocked');
       btn.classList.add('slot-selected');
-      btn.disabled = false; // selected must remain actionable (so user can deselect)
     }
 
-    // Click handling
     btn.addEventListener('click', (e) => {
       e.preventDefault();
+      if (btn.disabled) return;
 
-      // If blocked due to confirmed booking, nothing happens
-      if (state === 'blocked' && !timelineSelection.has(slot.id)) {
-        // do nothing — confirmed bookings are unselectable and no wishlist allowed
-        return;
-      }
-
-      // If past and disabled, do nothing
-      if (state === 'past') return;
-
-      // If partial (non-confirmed contention) and user tapped, open wishlist instead of direct selection
-      if (state === 'partial' && !timelineSelection.has(slot.id)) {
-        openWishlistModal(slot, null);
-        return;
-      }
-
-      // Toggle selection for available or selected slots
       const sid = slot.id;
       if (timelineSelection.has(sid)) {
         timelineSelection.delete(sid);
@@ -640,13 +621,8 @@ function renderTimeChips(buckets, occupancy) {
         timelineSelection.add(sid);
       }
 
-      // Keep selection contiguous and update duration
       normalizeSelectionToContiguous();
-
-      // Re-render the chips so occupancy-derived classes are recalculated (avoids stale colors)
       renderTimeChips(buckets, occupancy);
-
-      // Update booking summary
       updateSummaryFromSelection();
     });
 
@@ -654,11 +630,15 @@ function renderTimeChips(buckets, occupancy) {
   });
 }
 
+/* ---------- Courts grid: mount timeline inside selected court ---------- */
 function renderCourtsGrid(occupancy) {
   if (!courtsGrid) return;
   courtsGrid.innerHTML = '';
+
   Object.keys(PRICE_BY_COURT).forEach(courtId => {
     const meta = metaFor(courtId);
+    const isSelected = selectedCourt === courtId;
+
     const card = document.createElement('div');
     card.className = 'border rounded-xl p-3 flex flex-col gap-2 bg-white hover:border-emerald-500 transition';
 
@@ -674,22 +654,52 @@ function renderCourtsGrid(occupancy) {
 
     const btnRow = document.createElement('div');
     btnRow.className = 'mt-2 flex flex-wrap gap-2';
+
     const selectBtn = document.createElement('button');
-    selectBtn.className = 'px-3 py-1.5 rounded-xl text-sm ' + (selectedCourt === courtId ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800');
-    selectBtn.textContent = selectedCourt === courtId ? 'Selected' : 'Select';
+    selectBtn.className =
+      'px-3 py-1.5 rounded-xl text-sm ' +
+      (isSelected ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800');
+    selectBtn.textContent = isSelected ? 'Selected' : 'Select';
+
     addTap(selectBtn, () => {
       selectedCourt = courtId;
       selectedAmount = PRICE_BY_COURT[courtId] || 0;
+
       const s = document.getElementById('selectedPitch');
       const p = document.getElementById('selectedPrice');
       if (s) s.textContent = meta.label + (meta.dims ? ` · ${meta.dims}` : '');
       if (p) p.textContent = `₹${selectedAmount}`;
-      // re-render but keep timelineSelection (so selection does not reset on court change)
+
+      timelineSelection = new Set();
+      hide(confirmCard);
+      updateSummaryFromSelection();
+
       renderAll();
     });
 
     btnRow.appendChild(selectBtn);
     card.appendChild(btnRow);
+
+    if (isSelected && timeBucketTabs && timeChips && durationControl) {
+      const timelineHost = document.createElement('div');
+      timelineHost.className = 'mt-3 space-y-2';
+
+      timeBucketTabs.classList.remove('hidden');
+      timeChips.classList.remove('hidden');
+      durationControl.classList.remove('hidden');
+
+      timelineHost.appendChild(timeBucketTabs);
+      timelineHost.appendChild(timeChips);
+      timelineHost.appendChild(durationControl);
+
+      card.appendChild(timelineHost);
+    } else {
+      const helper = document.createElement('div');
+      helper.className = 'mt-2 text-xs text-gray-500';
+      helper.textContent = 'Select this court to view available time slots.';
+      card.appendChild(helper);
+    }
+
     courtsGrid.appendChild(card);
   });
 }
@@ -972,7 +982,6 @@ function initPitchSelector() {
 window.addEventListener('DOMContentLoaded', () => {
   initPitchSelector();
 
-  // Set selected pitch display
   const s = document.getElementById('selectedPitch');
   const p = document.getElementById('selectedPrice');
   if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
@@ -982,14 +991,12 @@ window.addEventListener('DOMContentLoaded', () => {
   syncDurationDisplay();
   renderAll();
 
-  // Wire mobile Details/Book buttons if present
   const detailsBtn = document.getElementById('summaryViewMobile');
   if (detailsBtn) detailsBtn.addEventListener('click', () => {
     const bookSection = document.getElementById('book');
     if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
   });
 
-  // sync desktop total -> mobile total periodically (keeps mobile widget in sync with other scripts)
   if (summaryTotal && summaryTotalMobile) {
     setInterval(() => {
       if (summaryTotal.textContent !== summaryTotalMobile.textContent) summaryTotalMobile.textContent = summaryTotal.textContent;
