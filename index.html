@@ -72,7 +72,7 @@
 
           <div id="selectedPitchPanel" class="mt-3 flex flex-col sm:flex-row sm:items-center gap-2 text-sm">
             <div class="px-2 py-1.5 md:px-3 md:py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
-              <div class="text-[11px] text-gray-500">Selected pitch</div>
+              <div class="text-[11px] text-gray-500">Selected court</div>
               <div id="selectedPitch" class="font-medium text-sm md:text-base">—</div>
             </div>
             <div class="px-2 py-1.5 md:px-3 md:py-2 rounded-md border bg-gray-50 w-full sm:w-auto">
@@ -83,12 +83,11 @@
         </div>
 
         <div class="p-3 md:p-4 border rounded-2xl bg-white">
-          <h3 class="font-semibold mb-2 text-sm md:text-base">Choose time &amp; court</h3>
+          <h3 class="font-semibold mb-2 text-sm md:text-base">Choose court &amp; time</h3>
 
+          <!-- These three blocks will be moved into the selected court card by JS -->
           <div id="timeBucketTabs" class="mb-2 flex flex-wrap gap-2"></div>
-
           <div id="timeChips" class="timeline-container rounded-md overflow-x-auto" role="region" aria-live="polite"></div>
-
           <div id="durationControl" class="mt-3 flex items-center gap-3 text-sm">
             <span class="text-gray-600 text-[12px]">Duration</span>
             <div class="inline-flex items-center border rounded-xl overflow-hidden">
