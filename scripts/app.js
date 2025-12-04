@@ -378,6 +378,7 @@ const summaryTotal    = document.getElementById('summaryTotal');
 const summaryBookBtn  = document.getElementById('summaryBookBtn');
 const summaryBookBtnMobile = document.getElementById('summaryBookBtnMobile');
 const summaryTotalMobile = document.getElementById('summaryTotalMobile');
+const summaryHint = document.getElementById('summaryHint');
 
 // hide bucket tabs entirely
 if (timeBucketTabs) timeBucketTabs.classList.add('hidden');
@@ -598,7 +599,7 @@ function renderTimeChips(slots, occupancy) {
   if (!slotsList.length) {
     const msg = document.createElement('div');
     msg.className = 'text-sm text-gray-600 p-4';
-    msg.textContent = 'No slots available.';
+    msg.textContent = 'No slots available for this day. Please pick another date.';
     grid.appendChild(msg);
     return;
   }
@@ -788,9 +789,11 @@ function updateSummaryFromSelection() {
     if (summaryTotalMobile) summaryTotalMobile.textContent = '₹0';
     if (summaryBookBtn) summaryBookBtn.disabled = true;
     if (summaryBookBtnMobile) summaryBookBtnMobile.disabled = true;
+    if (summaryHint) summaryHint.classList.remove('hidden');
     return;
   }
-
+  
+  if (summaryHint) summaryHint.classList.add('hidden');
   const indices = Array.from(timelineSelection).map(id => slotIndexMap[id]).filter(i => i !== undefined).sort((a,b)=>a-b);
   const min = indices[0];
   const startSlot = ALL_SLOTS[min];
