@@ -738,7 +738,7 @@ function renderTimeChips(slots, occupancy) {
       const clickedIdx = slotIndexMap[slot.id];
       if (clickedIdx == null) return;
     
-      // If no selection yet → behave like before (use current duration)
+      // 1) No selection yet → behave like before (use current duration)
       if (!timelineSelection.size) {
         const durationForSelection = selectedDurationMins || MIN_BOOKING_MINS;
     
@@ -775,7 +775,7 @@ function renderTimeChips(slots, occupancy) {
         return;
       }
     
-      // If there is already a selection
+      // 2) There is an existing selection
       const indices = Array.from(timelineSelection)
         .map(id => slotIndexMap[id])
         .filter(i => i !== undefined)
@@ -786,19 +786,98 @@ function renderTimeChips(slots, occupancy) {
       const slotCount = (endIdx - startIdx + 1);
       const currentDuration = slotCount * 30;
     
-      // 👉 NEW: If user clicks inside the current selection, toggle it off (deselect)
+      // 2a) Clicked INSIDE the current selection
       if (clickedIdx >= startIdx && clickedIdx <= endIdx) {
-        // Clear selection completely
-        timelineSelection = new Set();
-        // Reset duration back to minimum (optional, keeps control sane)
-        selectedDurationMins = MIN_BOOKING_MINS;
-        syncDurationDisplay();
+        // Single-slot selection → toggle everything off
+        if (startIdx === endIdx) {
+          timelineSelection = new Set();
+          selectedDurationMins = MIN_BOOKING_MINS;
+          syncDurationDisplay();
+          renderTimeChips(slotsList, occupancy);
+          updateSummaryFromSelection();
+          return;
+        }
+    
+        // Exactly 2 slots (1 hr) and user clicks an edge → we can't keep >= 60 mins, so clear
+        if (slotCount === 2 && (clickedIdx === startIdx || clickedIdx === endIdx)) {
+          timelineSelection = new Set();
+          selectedDurationMins = MIN_BOOKING_MINS;
+          syncDurationDisplay();
+          renderTimeChips(slotsList, occupancy);
+          updateSummaryFromSelection();
+          return;
+        }
+    
+        // Edge click on a longer selection → shrink from that side
+        if (clickedIdx === startIdx || clickedIdx === endIdx) {
+          const newStartIdx = (clickedIdx === startIdx) ? startIdx + 1 : startIdx;
+          const newEndIdx   = (clickedIdx === endIdx)   ? endIdx - 1   : endIdx;
+          const newSlotCount = (newEndIdx - newStartIdx + 1);
+          const newDuration  = Math.max(MIN_BOOKING_MINS, newSlotCount * 30);
+          const newStartSlotId = ALL_SLOTS[newStartIdx].id;
+    
+          const check = isRangeAvailableFor(
+            occupancy,
+            newStartSlotId,
+            newDuration,
+            selectedCourt
+          );
+          if (!check.allowed) {
+            toast("That adjusted range is not available: " + (check.reason || ""), { error: true });
+            return;
+          }
+    
+          selectedDurationMins = newDuration;
+          syncDurationDisplay();
+    
+          const newSelection = new Set();
+          for (let i = newStartIdx; i <= newEndIdx; i++) {
+            if (ALL_SLOTS[i]) newSelection.add(ALL_SLOTS[i].id);
+          }
+          timelineSelection = newSelection;
+    
+          normalizeSelectionToContiguous();
+          renderTimeChips(slotsList, occupancy);
+          updateSummaryFromSelection();
+          return;
+        }
+    
+        // Middle click inside selection → re-center from this slot using current duration
+        const durationForSelection = selectedDurationMins || MIN_BOOKING_MINS;
+        const check = isRangeAvailableFor(
+          occupancy,
+          ALL_SLOTS[clickedIdx].id,
+          durationForSelection,
+          selectedCourt
+        );
+        if (!check.allowed) {
+          toast("That time range is not available: " + (check.reason || ""), { error: true });
+          return;
+        }
+    
+        const requiredSlots = Math.max(1, durationForSelection / 30);
+        const newSelection = new Set();
+        for (let i = 0; i < requiredSlots; i++) {
+          const s = ALL_SLOTS[clickedIdx + i];
+          if (!s) {
+            newSelection.clear();
+            break;
+          }
+          newSelection.add(s.id);
+        }
+        if (!newSelection.size) {
+          toast("Not enough time left in the day for this duration.", { error: true });
+          return;
+        }
+    
+        timelineSelection = newSelection;
+        normalizeSelectionToContiguous();
         renderTimeChips(slotsList, occupancy);
         updateSummaryFromSelection();
         return;
       }
     
-      // Clicked BEFORE or AFTER the current range → extend range
+      // 2b) Clicked OUTSIDE current selection → extend range
       const newStartIdx = Math.min(startIdx, clickedIdx);
       const newEndIdx   = Math.max(endIdx, clickedIdx);
       const newSlotCount = (newEndIdx - newStartIdx + 1);
