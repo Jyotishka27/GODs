@@ -149,29 +149,67 @@ function metaFor(courtId) {
   return { type: "unknown", label: key || String(courtId), dims: "" };
 }
 
+/* ---------- PATCHED: robust time parsing + booking → slots ---------- */
+// Parse times like "18:30", "6:30 PM", "6 PM", "6pm", "06:00am" → minutes since midnight
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  let s = String(str).trim().toUpperCase();
+
+  // detect AM/PM
+  const hasAM = s.includes("AM");
+  const hasPM = s.includes("PM");
+
+  // strip AM/PM and extra chars
+  s = s.replace(/AM|PM|\./g, "").trim();
+
+  // now s is like "18:30" or "6:30" or "6"
+  let [hStr, mStr] = s.split(":");
+  if (!hStr) return null;
+
+  let h = Number(hStr);
+  let m = mStr != null && mStr !== "" ? Number(mStr) : 0;
+
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  // convert 12h → 24h if AM/PM present
+  if (hasPM && h < 12) h += 12;
+  if (hasAM && h === 12) h = 0;
+
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+
+  return h * 60 + m;
+}
+
+// Turn a booking range string into 30-min slot IDs in "HH:MM-HH:MM" (24h) format
 function expandBookingToSlots(bookingRangeId) {
   if (!bookingRangeId || typeof bookingRangeId !== "string") return [];
-  const [start, end] = bookingRangeId.split("-");
-  const startIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[0] === start);
-  const endIdx = ALL_SLOTS.findIndex(s => s.id.split("-")[1] === end);
-  if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
-    const out = [];
-    for (let i = startIdx; i <= endIdx; i++) out.push(ALL_SLOTS[i].id);
-    return out;
-  }
-  const sH = Number(start.split(":")[0]), sM = Number(start.split(":")[1]);
-  const eH = Number(end.split(":")[0]), eM = Number(end.split(":")[1]);
-  const sT = sH * 60 + sM;
-  const eT = eH * 60 + eM;
+
+  // Support "18:30-20:00", "6:30 PM - 8 PM", "6:30pm–8pm", etc.
+  const parts = bookingRangeId.split(/\s*[-–—]\s*/); // hyphen / en dash / em dash
+  if (parts.length < 2) return [];
+
+  const startStr = parts[0];
+  const endStr   = parts[1];
+
+  const startMins = parseTimeToMinutes(startStr);
+  const endMins   = parseTimeToMinutes(endStr);
+
+  if (startMins == null || endMins == null || endMins <= startMins) return [];
+
   const out = [];
-  for (let t = sT; t < eT; t += 30) {
-    const sh = Math.floor(t / 60), sm = t % 60;
-    const eh = Math.floor((t + 30) / 60), em = (t + 30) % 60;
-    const sId = `${String(sh).padStart(2,"0")}:${String(sm).padStart(2,"0")}-${String(eh).padStart(2,"0")}:${String(em).padStart(2,"0")}`;
-    out.push(sId);
+  for (let t = startMins; t < endMins; t += 30) {
+    const sh = Math.floor(t / 60);
+    const sm = t % 60;
+    const eh = Math.floor((t + 30) / 60);
+    const em = (t + 30) % 60;
+
+    const start = `${String(sh).padStart(2,"0")}:${String(sm).padStart(2,"0")}`;
+    const end   = `${String(eh).padStart(2,"0")}:${String(em).padStart(2,"0")}`;
+    out.push(`${start}-${end}`);
   }
   return out;
 }
+/* ---------- END PATCH ---------- */
 
 function computeSlotOccupancy(bookingDocs) {
   const m = {};
@@ -232,7 +270,7 @@ function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCour
     }
 
     const sid = slot.id;
-    const occ = occupancyMap[sid] || {
+    const occ = (occupancyMap && occupancyMap[sid]) || {
       halves: new Set(),
       full: false,
       cricket: false,
@@ -315,7 +353,7 @@ const confirmWA = $("#confirmWA");
 
 // NEW refs for updated UI
 const weekStrip      = document.getElementById('weekStrip');
-const timeBucketTabs = document.getElementById('timeBucketTabs');
+const timeBucketTabs = document.getElementById('timeBucketTabs'); // will stay hidden / unused
 const timeChips      = document.getElementById('timeChips');
 const durationDisplay = document.getElementById('durationDisplay');
 const durationMinus   = document.getElementById('durationMinus');
@@ -332,7 +370,7 @@ const summaryBookBtn  = document.getElementById('summaryBookBtn');
 const summaryBookBtnMobile = document.getElementById('summaryBookBtnMobile');
 const summaryTotalMobile = document.getElementById('summaryTotalMobile');
 
-// hide time UI at the original location; it will be moved into the selected court card
+// hide bucket tabs entirely
 if (timeBucketTabs) timeBucketTabs.classList.add('hidden');
 if (timeChips) timeChips.classList.add('hidden');
 if (durationControl) durationControl.classList.add('hidden');
@@ -341,7 +379,6 @@ if (durationControl) durationControl.classList.add('hidden');
 let selectedCourt = normalizedKey("5A");
 let selectedDate = dateInput?.value || fmtDateISO(new Date());
 let selectedAmount = PRICE_BY_COURT[selectedCourt] || 0;
-let selectedBucket = "morning";
 let selectedDurationMins = MIN_BOOKING_MINS;
 let modalMode = "booking";
 let preferredBookingId = null;
@@ -407,18 +444,6 @@ async function fetchWishlistsFor(dateISO, courtId) {
     toast("Firestore error (wishlists): " + (err?.message || err), { error: true, duration: 8000 });
     return [];
   }
-}
-
-function bucketSlots(slots) {
-  const buckets = { midnight: [], morning: [], afternoon: [], evening: [] };
-  slots.forEach(s => {
-    const hour = Number(s.start.split(":")[0]);
-    if (hour >= 0 && hour < 6) buckets.midnight.push(s);
-    else if (hour >= 6 && hour < 12) buckets.morning.push(s);
-    else if (hour >= 12 && hour < 18) buckets.afternoon.push(s);
-    else buckets.evening.push(s);
-  });
-  return buckets;
 }
 
 /* ---------- Week strip ---------- */
@@ -537,80 +562,29 @@ async function renderAll() {
   window.__GODsTurf = window.__GODsTurf || {};
   window.__GODsTurf.occupancyMap = occupancy;
 
-  const buckets = bucketSlots(ALL_SLOTS);
-  renderTimeBuckets(buckets, occupancy);
-  renderTimeChips(buckets, occupancy);
+  // NO BUCKETS — show all slots together
+  renderTimeChips(ALL_SLOTS, occupancy);
   renderCourtsGrid(occupancy);
   updateSummaryFromSelection();
 }
 
-function renderTimeBuckets(buckets, occupancy) {
-  if (!timeBucketTabs) return;
-  const bucketInfo = {};
-  const durationForCheck = selectedDurationMins || MIN_BOOKING_MINS;
-
-  Object.entries(buckets).forEach(([k, items]) => {
-    let available = 0;
-    items.forEach(s => {
-      const ok = isRangeAvailableFor(
-        occupancy,
-        s.id,
-        durationForCheck,
-        selectedCourt
-      ).allowed;
-      if (ok && !isSlotInPast(s.id, selectedDate)) available++;
-    });
-    bucketInfo[k] = { total: items.length, available };
-  });
-
-  const tabOrder = [
-    { key: 'midnight', title: 'Midnight' },
-    { key: 'morning',  title: 'Morning' },
-    { key: 'afternoon',title: 'Afternoon' },
-    { key: 'evening',  title: 'Evening' }
-  ];
-
-  timeBucketTabs.innerHTML = '';
-  tabOrder.forEach(t => {
-    const info = bucketInfo[t.key] || { total: 0, available: 0 };
-    const isActive = t.key === selectedBucket;
-    const btn = document.createElement('button');
-    btn.className = [
-      'px-3','py-2','rounded-full','text-sm','border','flex-1',
-      isActive ? 'bg-emerald-600 text-white' : 'bg-white'
-    ].join(' ');
-    btn.innerHTML = `
-      <span class="truncate">${t.title}</span>
-      <span class="ml-2 text-xs ${isActive ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-700'} px-2 py-0.5 rounded-full">
-        ${info.available}/${info.total}
-      </span>
-    `;
-    addTap(btn, () => {
-      selectedBucket = t.key;
-      timelineSelection = new Set();
-      renderAll();
-    });
-    timeBucketTabs.appendChild(btn);
-  });
-}
-
-/* ---------- renderTimeChips (court-specific, full duration block from click) ---------- */
-function renderTimeChips(buckets, occupancy) {
+/* ---------- renderTimeChips (all slots, single view, non-scrollable grid) ---------- */
+function renderTimeChips(slots, occupancy) {
   if (!timeChips) return;
-  const bucketItems = buckets[selectedBucket] || [];
+  const slotsList = slots || [];
   timeChips.innerHTML = '';
 
   const container = document.createElement('div');
-  container.className = 'timeline-container';
+  // flex-wrap grid so everything is visible, no horizontal scroll
   const grid = document.createElement('div');
-  grid.className = 'timeline-grid';
+  grid.className = 'grid grid-cols-3 sm:grid-cols-4 gap-2'; // Tailwind-style; adjust in CSS if needed
   container.appendChild(grid);
   timeChips.appendChild(container);
 
-  if (!bucketItems.length) {
+  if (!slotsList.length) {
     const msg = document.createElement('div');
     msg.className = 'text-sm text-gray-600 p-4';
-    msg.textContent = 'No slots in this period.';
+    msg.textContent = 'No slots available.';
     grid.appendChild(msg);
     return;
   }
@@ -618,9 +592,9 @@ function renderTimeChips(buckets, occupancy) {
   const durationForCheck = selectedDurationMins || MIN_BOOKING_MINS;
   const requiredSlots = Math.max(1, durationForCheck / 30);
 
-  bucketItems.forEach(slot => {
+  slotsList.forEach(slot => {
     const btn = document.createElement('button');
-    btn.className = 'slot-btn bg-white';
+    btn.className = 'slot-btn bg-white w-full';
     btn.setAttribute('data-slot-id', slot.id);
 
     const past = isSlotInPast(slot.id, selectedDate);
@@ -700,7 +674,7 @@ function renderTimeChips(buckets, occupancy) {
       timelineSelection = newSelection;
 
       normalizeSelectionToContiguous();
-      renderTimeChips(buckets, occupancy);
+      renderTimeChips(ALL_SLOTS, occupancy);
       updateSummaryFromSelection();
     });
 
@@ -758,15 +732,14 @@ function renderCourtsGrid(occupancy) {
     btnRow.appendChild(selectBtn);
     card.appendChild(btnRow);
 
-    if (isSelected && timeBucketTabs && timeChips && durationControl) {
+    if (isSelected && timeChips && durationControl) {
       const timelineHost = document.createElement('div');
       timelineHost.className = 'mt-3 space-y-2';
 
-      timeBucketTabs.classList.remove('hidden');
+      // Only show the full time grid + duration — no bucket tabs
       timeChips.classList.remove('hidden');
       durationControl.classList.remove('hidden');
 
-      timelineHost.appendChild(timeBucketTabs);
       timelineHost.appendChild(timeChips);
       timelineHost.appendChild(durationControl);
 
