@@ -470,33 +470,60 @@ async function fetchWishlistsFor(dateISO, courtId) {
   }
 }
 
-/* ---------- Week strip ---------- */
-function buildWeekStrip(baseDateISO) {
+/* ---------- Day strip (scrollable, up to max date) ---------- */
+function buildDayStrip() {
   if (!weekStrip) return;
-  const base = baseDateISO ? new Date(baseDateISO) : new Date();
   weekStrip.innerHTML = '';
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(base);
-    d.setDate(base.getDate() + i);
+
+  // Start from today (or dateInput.min if set)
+  const todayISO = dateInput?.min || fmtDateISO(new Date());
+  const startDate = new Date(todayISO);
+
+  // End at dateInput.max if present, otherwise 30 days from start
+  let totalDays = 30;
+  if (dateInput?.max) {
+    const maxDate = new Date(dateInput.max);
+    const diffMs = maxDate - startDate;
+    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000)) + 1;
+    totalDays = Math.max(1, diffDays);
+  }
+
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
     const iso = fmtDateISO(d);
-    const label = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
-    const btn = document.createElement('button');
+
     const isActive = iso === selectedDate;
+
+    const btn = document.createElement('button');
     btn.className = [
-      'px-3','py-2','rounded-xl','text-sm','border',
-      isActive ? 'bg-emerald-600 text-white' : 'bg-white text-gray-800'
+      'px-3','py-2','rounded-xl','text-xs','sm:text-sm','border',
+      'flex','flex-col','items-center','justify-center',
+      isActive ? 'bg-emerald-600 text-white border-emerald-600'
+               : 'bg-white text-gray-800 border-gray-200'
     ].join(' ');
-    btn.textContent = label;
+
+    // Two-line label like "Fri, 5" / "Dec"
+    const line1 = document.createElement('span');
+    line1.textContent = d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' });
+
+    const line2 = document.createElement('span');
+    line2.className = 'text-[11px] opacity-80';
+    line2.textContent = d.toLocaleDateString('en-IN', { month: 'short' });
+
+    btn.appendChild(line1);
+    btn.appendChild(line2);
+
     addTap(btn, () => {
       selectedDate = iso;
       if (dateInput) dateInput.value = iso;
       hide(confirmCard);
       timelineSelection = new Set();
       renderAll();
-    
-      // re-render strip but keep the same 7-day window
-      buildWeekStrip(weekBaseISO);
+      // just rebuild strip so active state moves
+      buildDayStrip();
     });
+
     weekStrip.appendChild(btn);
   }
 }
@@ -1149,12 +1176,10 @@ dateInput?.addEventListener("change", ()=> {
   timelineSelection = new Set();
   selectedDate = dateInput.value;
 
-  // move the 7-day window only when user picks from calendar
-  weekBaseISO = selectedDate;
-
-  buildWeekStrip(weekBaseISO);
+  buildDayStrip();
   renderAll();
 });
+
 
 /* ---------- pitch selector (simplified for new layout) ---------- */
 function initPitchSelector() {
@@ -1177,7 +1202,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (s) s.textContent = metaFor(selectedCourt).label + (metaFor(selectedCourt).dims ? ` · ${metaFor(selectedCourt).dims}` : '');
   if (p) p.textContent = `₹${selectedAmount}`;
 
-  buildWeekStrip(selectedDate);
+  buildDayStrip();
   syncDurationDisplay();
   renderAll();
 
