@@ -1,4 +1,4 @@
-// scripts/app.js (updated: court-specific timeline inside card, booked slots non-selectable)
+// scripts/app.js (court-specific timeline inside card, 1-hr min, booked slots non-selectable)
 // Uses Firestore (same imports & config as before)
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
 import {
@@ -114,7 +114,6 @@ function generate30MinSlots() {
 const ALL_SLOTS = generate30MinSlots();
 const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {});
 
-const BUFFER_MIN = 10;
 const MIN_BOOKING_MINS = 60;
 
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
@@ -502,10 +501,17 @@ async function renderAll() {
 function renderTimeBuckets(buckets, occupancy) {
   if (!timeBucketTabs) return;
   const bucketInfo = {};
+  const durationForCheck = selectedDurationMins || MIN_BOOKING_MINS;
+
   Object.entries(buckets).forEach(([k, items]) => {
     let available = 0;
     items.forEach(s => {
-      const ok = isRangeAvailableFor(occupancy, s.id, MIN_BOOKING_MINS, selectedCourt).allowed;
+      const ok = isRangeAvailableFor(
+        occupancy,
+        s.id,
+        durationForCheck,
+        selectedCourt
+      ).allowed;
       if (ok && !isSlotInPast(s.id, selectedDate)) available++;
     });
     bucketInfo[k] = { total: items.length, available };
@@ -542,7 +548,7 @@ function renderTimeBuckets(buckets, occupancy) {
   });
 }
 
-/* ---------- renderTimeChips (court-specific, booked slots disabled) ---------- */
+/* ---------- renderTimeChips (court-specific, full duration block from click) ---------- */
 function renderTimeChips(buckets, occupancy) {
   if (!timeChips) return;
   const bucketItems = buckets[selectedBucket] || [];
@@ -563,6 +569,9 @@ function renderTimeChips(buckets, occupancy) {
     return;
   }
 
+  const durationForCheck = selectedDurationMins || MIN_BOOKING_MINS;
+  const requiredSlots = Math.max(1, durationForCheck / 30);
+
   bucketItems.forEach(slot => {
     const btn = document.createElement('button');
     btn.className = 'slot-btn bg-white';
@@ -577,7 +586,7 @@ function renderTimeChips(buckets, occupancy) {
       const check = isRangeAvailableFor(
         occupancy,
         slot.id,
-        MIN_BOOKING_MINS,
+        durationForCheck,
         selectedCourt
       );
       state = check.allowed ? 'available' : 'blocked';
@@ -614,12 +623,35 @@ function renderTimeChips(buckets, occupancy) {
       e.preventDefault();
       if (btn.disabled) return;
 
-      const sid = slot.id;
-      if (timelineSelection.has(sid)) {
-        timelineSelection.delete(sid);
-      } else {
-        timelineSelection.add(sid);
+      const startIdx = slotIndexMap[slot.id];
+      if (startIdx == null) return;
+
+      const check = isRangeAvailableFor(
+        occupancy,
+        slot.id,
+        durationForCheck,
+        selectedCourt
+      );
+      if (!check.allowed) {
+        toast("That time range is not available: " + (check.reason || ""), { error: true });
+        return;
       }
+
+      const newSelection = new Set();
+      for (let i = 0; i < requiredSlots; i++) {
+        const s = ALL_SLOTS[startIdx + i];
+        if (!s) {
+          newSelection.clear();
+          break;
+        }
+        newSelection.add(s.id);
+      }
+      if (!newSelection.size) {
+        toast("Not enough time left in the day for this duration.", { error: true });
+        return;
+      }
+
+      timelineSelection = newSelection;
 
       normalizeSelectionToContiguous();
       renderTimeChips(buckets, occupancy);
@@ -942,7 +974,7 @@ mConfirm?.addEventListener("click", async () => {
         status: "open",
         createdAt: serverTimestamp()
       };
-      const ref = await addDoc(collection(db, "wishlists"), wishlistEntry);
+      await addDoc(collection(db, "wishlists"), wishlistEntry);
       toast("Saved to wishlist — admin will be notified.", { duration: 6000 });
       closeModalFn();
       timelineSelection = new Set();
