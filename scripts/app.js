@@ -34,9 +34,10 @@ function toast(msg, opts = {}) {
     const t = document.createElement("div");
     t.textContent = msg;
     t.style = `
+      const bottomOffset = window.innerWidth < 768 ? 80 : 12;
       position: fixed;
       right: 12px;
-      bottom: 12px;
+      bottom: ${bottomOffset}px;
       max-width: 360px;
       background: ${opts.error ? "#fee2e2" : "#ecfdf5"};
       color: ${opts.error ? "#991b1b" : "#064e3b"};
@@ -49,6 +50,14 @@ function toast(msg, opts = {}) {
     document.body.appendChild(t);
     setTimeout(() => t.remove(), opts.duration || 4500);
   } catch (e) { /* ignore */ }
+}
+
+const btnMobile = document.getElementById('BtnMobile');
+if (btnMobile) {
+  btnMobile.addEventListener('click', () => {
+    const bookSection = document.getElementById('book');
+    if (bookSection) bookSection.scrollIntoView({ behavior: 'smooth' });
+  });
 }
 
 function addTap(el, handler) {
@@ -883,7 +892,8 @@ function validateModalFields() {
   const name = mName?.value?.trim() || "";
   const phone = mPhone?.value?.trim() || "";
   if (name.length < 2) return { ok:false, reason:"name" };
-  if (!/^\+?\d{8,15}$/.test(phone)) return { ok:false, reason:"phone" };
+  const cleaned = phone.replace(/[\s\-]/g, '');
+  if (!/^\+?\d{8,15}$/.test(cleaned)) return { ok:false, reason:"phone" };
   return { ok:true, name, phone };
 }
 
