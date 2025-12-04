@@ -384,6 +384,9 @@ let modalMode = "booking";
 let preferredBookingId = null;
 let timelineSelection = new Set();
 
+// week strip window anchor (start of the 7-day strip)
+let weekBaseISO = selectedDate;
+
 /* ---------- static UI ---------- */
 if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 
@@ -469,7 +472,9 @@ function buildWeekStrip(baseDateISO) {
       hide(confirmCard);
       timelineSelection = new Set();
       renderAll();
-      buildWeekStrip(selectedDate);
+    
+      // re-render strip but keep the same 7-day window
+      buildWeekStrip(weekBaseISO);
     });
     weekStrip.appendChild(btn);
   }
@@ -1019,7 +1024,11 @@ dateInput?.addEventListener("change", ()=> {
   hide(confirmCard);
   timelineSelection = new Set();
   selectedDate = dateInput.value;
-  buildWeekStrip(selectedDate);
+
+  // move the 7-day window only when user picks from calendar
+  weekBaseISO = selectedDate;
+
+  buildWeekStrip(weekBaseISO);
   renderAll();
 });
 
