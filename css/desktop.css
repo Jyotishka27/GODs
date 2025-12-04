@@ -94,12 +94,13 @@ body {
 /* ---- STATES ---- */
 
 /* stronger selector so other utility classes (e.g. bg-white) don't override */
+/* CORRECT THEME GREEN */
 .slot-btn.slot-selected,
 .slot-selected.slot-btn {
-  background: var(--accent) !important;
+  background: #16a34a !important;       /* emerald-600 */
   color: #ffffff !important;
-  border-color: var(--accent-dark) !important;
-  box-shadow: 0 0 0 2px rgba(16,185,129,0.3) !important;
+  border-color: #15803d !important;      /* emerald-700 */
+  box-shadow: 0 0 0 2px rgba(22,163,74,0.35) !important;
 }
 
 /* ensure child text inherits color */
