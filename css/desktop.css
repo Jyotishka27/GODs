@@ -216,6 +216,21 @@ body {
 /* small tweak: reduce left-margin on .ml-2 inside the tabs (keeps spacing tight) */
 #timeBucketTabs .ml-2 { margin-left: 0.5rem !important; }
 
+/* Horizontal scroll improvements for the week strip */
+#weekStrip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;       /* Firefox */
+}
+
+#weekStrip > button {
+  flex: 0 0 auto;              /* prevents shrinking */
+  scroll-snap-align: start;    /* snap scrolling */
+  white-space: nowrap;         /* keeps text tidy */
+}
+
 /* responsive adjustment: slightly smaller min-width on very small screens */
 @media (max-width: 420px) {
   #timeBucketTabs button { min-width: 92px; padding: 0.35rem 0.6rem !important; min-height: 36px !important; }
