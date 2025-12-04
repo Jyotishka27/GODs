@@ -110,10 +110,10 @@ body {
 /* Strong selected style so text never becomes unreadable */
 .slot-btn.slot-selected,
 .slot-selected.slot-btn {
-  background: var(--accent) !important;
-  color: #fff !important;
+  background: #16a34a !important;
+  color: #ffffff !important;
   border-color: #15803d !important;
-  box-shadow: 0 4px 10px rgba(21,128,61,0.12) !important;
+  box-shadow: 0 4px 10px rgba(22,163,74,0.25) !important;
 }
 
 /* make sure child text inherits the selected color */
