@@ -210,33 +210,75 @@ function makeRangeIdFromStartAndDuration(startSlotId, durationMins) {
   return `${start}-${end}`;
 }
 
+/* ---------- UPDATED: availability check uses slot indexes ---------- */
 function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCourt) {
-  if (!startSlotId || !targetCourt) return { allowed: false, reason: "Invalid args" };
-  const rangeId = makeRangeIdFromStartAndDuration(startSlotId, durationMins);
-  const slotsNeeded = expandBookingToSlots(rangeId);
-  if (!slotsNeeded.length) return { allowed: false, reason: "Invalid range." };
+  if (!startSlotId || !targetCourt) {
+    return { allowed: false, reason: "Invalid args" };
+  }
+
+  const startIdx = slotIndexMap[startSlotId];
+  if (startIdx === undefined || startIdx === null) {
+    return { allowed: false, reason: "Unknown start slot." };
+  }
+
+  const slotsNeeded = Math.max(1, Math.floor(durationMins / 30));
   const tmeta = metaFor(targetCourt);
   const targetKey = normalizedKey(targetCourt);
 
-  for (let sid of slotsNeeded) {
-    const occ = occupancyMap[sid] || { halves: new Set(), full:false, cricket:false, bookings:[] };
+  for (let offset = 0; offset < slotsNeeded; offset++) {
+    const slot = ALL_SLOTS[startIdx + offset];
+    if (!slot) {
+      return { allowed: false, reason: "Not enough time left in the day." };
+    }
+
+    const sid = slot.id;
+    const occ = occupancyMap[sid] || {
+      halves: new Set(),
+      full: false,
+      cricket: false,
+      bookings: []
+    };
+
     if (tmeta.type === "half") {
-      if (occ.full) return { allowed: false, reason: `Blocked — full ground at ${sid}` };
-      if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
-      if (occ.halves.size >= 2) return { allowed: false, reason: `Both halves booked at ${sid}` };
-      if (targetKey && occ.halves.has(targetKey)) return { allowed: false, reason: `This half already booked at ${sid}` };
+      if (occ.full) {
+        return { allowed: false, reason: `Blocked — full ground at ${sid}` };
+      }
+      if (occ.cricket) {
+        return { allowed: false, reason: `Blocked — cricket at ${sid}` };
+      }
+      if (occ.halves.size >= 2) {
+        return { allowed: false, reason: `Both halves booked at ${sid}` };
+      }
+      if (targetKey && occ.halves.has(targetKey)) {
+        return { allowed: false, reason: `This half already booked at ${sid}` };
+      }
     } else if (tmeta.type === "full") {
-      if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — half booked at ${sid}` };
-      if (occ.cricket) return { allowed: false, reason: `Blocked — cricket at ${sid}` };
-      if (occ.full) return { allowed: false, reason: `Full booked at ${sid}` };
+      if (occ.halves.size > 0) {
+        return { allowed: false, reason: `Blocked — half booked at ${sid}` };
+      }
+      if (occ.cricket) {
+        return { allowed: false, reason: `Blocked — cricket at ${sid}` };
+      }
+      if (occ.full) {
+        return { allowed: false, reason: `Full booked at ${sid}` };
+      }
     } else if (tmeta.type === "cricket") {
-      if (occ.halves.size > 0) return { allowed: false, reason: `Blocked — halves booked at ${sid}` };
-      if (occ.full) return { allowed: false, reason: `Blocked — full booked at ${sid}` };
-      if (occ.cricket) return { allowed: false, reason: `Cricket booked at ${sid}` };
+      if (occ.halves.size > 0) {
+        return { allowed: false, reason: `Blocked — halves booked at ${sid}` };
+      }
+      if (occ.full) {
+        return { allowed: false, reason: `Blocked — full booked at ${sid}` };
+      }
+      if (occ.cricket) {
+        return { allowed: false, reason: `Cricket booked at ${sid}` };
+      }
     } else {
-      if (occ.bookings.length) return { allowed: false, reason: `Booked at ${sid}` };
+      if (occ.bookings.length) {
+        return { allowed: false, reason: `Booked at ${sid}` };
+      }
     }
   }
+
   return { allowed: true, reason: null };
 }
 
@@ -351,7 +393,11 @@ async function fetchBookingsForDate(dateISO) {
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
-    const q = query(collection(db, "wishlists"), where("date", "==", dateISO), where("court", "==", normalizedKey(courtId)));
+    const q = query(
+      collection(db, "wishlists"),
+      where("date", "==", dateISO),
+      where("court", "==", normalizedKey(courtId))
+    );
     const snap = await getDocs(q);
     const docs = [];
     snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
@@ -943,7 +989,8 @@ mConfirm?.addEventListener("click", async () => {
   if (modalMode === "wishlist") {
     try {
       setConfirmLoading(true);
-      const dupQ = query(collection(db, "wishlists"),
+      const dupQ = query(
+        collection(db, "wishlists"),
         where("date","==", selectedDate),
         where("court","==", normalizedKey(selectedCourt)),
         where("slotId","==", rangeId),
