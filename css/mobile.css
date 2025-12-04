@@ -116,7 +116,6 @@ body {
   box-shadow: 0 4px 10px rgba(22,163,74,0.20) !important;
 }
 
-
 /* make sure child text inherits the selected color */
 .slot-btn.slot-selected > div,
 .slot-selected > div {
