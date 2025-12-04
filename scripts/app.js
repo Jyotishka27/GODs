@@ -568,16 +568,16 @@ async function renderAll() {
   updateSummaryFromSelection();
 }
 
-/* ---------- renderTimeChips (all slots, single view, non-scrollable grid) ---------- */
+/* ---------- renderTimeChips (all slots, booked = exact 30-min chunk) ---------- */
 function renderTimeChips(slots, occupancy) {
   if (!timeChips) return;
   const slotsList = slots || [];
   timeChips.innerHTML = '';
 
   const container = document.createElement('div');
-  // flex-wrap grid so everything is visible, no horizontal scroll
+  // grid so everything wraps on one screen (no horizontal scroll)
   const grid = document.createElement('div');
-  grid.className = 'grid grid-cols-3 sm:grid-cols-4 gap-2'; // Tailwind-style; adjust in CSS if needed
+  grid.className = 'grid grid-cols-3 sm:grid-cols-4 gap-2';
   container.appendChild(grid);
   timeChips.appendChild(container);
 
@@ -589,8 +589,8 @@ function renderTimeChips(slots, occupancy) {
     return;
   }
 
-  const durationForCheck = selectedDurationMins || MIN_BOOKING_MINS;
-  const requiredSlots = Math.max(1, durationForCheck / 30);
+  // duration used when actually selecting a slot (1 hr min, etc.)
+  const durationForSelection = selectedDurationMins || MIN_BOOKING_MINS;
 
   slotsList.forEach(slot => {
     const btn = document.createElement('button');
@@ -603,22 +603,24 @@ function renderTimeChips(slots, occupancy) {
     if (past) {
       state = 'past';
     } else {
-      const check = isRangeAvailableFor(
+      // IMPORTANT: here we only check the exact 30-min chunk
+      const chunkCheck = isRangeAvailableFor(
         occupancy,
         slot.id,
-        durationForCheck,
+        30,            // ONLY this 30-minute block
         selectedCourt
       );
-      state = check.allowed ? 'available' : 'blocked';
+      state = chunkCheck.allowed ? 'available' : 'blocked';
     }
 
+    // Past or actually-occupied 30-min chunks are disabled
     btn.disabled = (state === 'past' || state === 'blocked');
 
     btn.classList.remove('slot-past', 'slot-blocked', 'slot-selected');
     if (state === 'past') {
       btn.classList.add('slot-past');
     } else if (state === 'blocked') {
-      btn.classList.add('slot-blocked');
+      btn.classList.add('slot-blocked'); // this is only the exact occupied chunk now
     }
 
     const timeLabel = document.createElement('div');
@@ -633,6 +635,7 @@ function renderTimeChips(slots, occupancy) {
     btn.appendChild(timeLabel);
     btn.appendChild(sub);
 
+    // keep selected styling
     if (timelineSelection.has(slot.id)) {
       btn.disabled = false;
       btn.classList.remove('slot-past', 'slot-blocked');
@@ -646,10 +649,11 @@ function renderTimeChips(slots, occupancy) {
       const startIdx = slotIndexMap[slot.id];
       if (startIdx == null) return;
 
+      // When actually selecting, still enforce the full duration (e.g. 60 mins)
       const check = isRangeAvailableFor(
         occupancy,
         slot.id,
-        durationForCheck,
+        durationForSelection,
         selectedCourt
       );
       if (!check.allowed) {
@@ -657,6 +661,7 @@ function renderTimeChips(slots, occupancy) {
         return;
       }
 
+      const requiredSlots = Math.max(1, durationForSelection / 30);
       const newSelection = new Set();
       for (let i = 0; i < requiredSlots; i++) {
         const s = ALL_SLOTS[startIdx + i];
