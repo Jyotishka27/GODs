@@ -123,6 +123,18 @@ function generate30MinSlots() {
 const ALL_SLOTS = generate30MinSlots();
 const slotIndexMap = ALL_SLOTS.reduce((acc,s,i)=>{ acc[s.id]=i; return acc; }, {});
 
+// Time-of-day buckets for the tabs
+const TIME_BUCKETS = {
+  all:      { label: "All Day",    from: 0,  to: 24 },
+  morning:  { label: "Morning",    from: 6,  to: 12 },
+  afternoon:{ label: "Afternoon",  from: 12, to: 17 },
+  evening:  { label: "Evening",    from: 17, to: 22 },
+  night:    { label: "Night",      from: 22, to: 24 }
+};
+
+// Default bucket (most users care about evening)
+let activeBucket = "evening";
+
 const MIN_BOOKING_MINS = 60;
 
 const PRICE_BY_COURT = { "5A": 1500, "5B": 1500, "7A": 2500, "CRK": 2500 };
@@ -380,8 +392,7 @@ const summaryBookBtnMobile = document.getElementById('summaryBookBtnMobile');
 const summaryTotalMobile = document.getElementById('summaryTotalMobile');
 const summaryHint = document.getElementById('summaryHint');
 
-// hide bucket tabs entirely
-if (timeBucketTabs) timeBucketTabs.classList.add('hidden');
+// hide timeline until a court is selected (tabs will be managed separately)
 if (timeChips) timeChips.classList.add('hidden');
 if (durationControl) durationControl.classList.add('hidden');
 
@@ -560,6 +571,36 @@ function normalizeSelectionToContiguous() {
   syncDurationDisplay();
 }
 
+/* ---------- Time bucket tabs ---------- */
+function renderTimeBucketTabs() {
+  if (!timeBucketTabs) return;
+  timeBucketTabs.innerHTML = "";
+
+  Object.entries(TIME_BUCKETS).forEach(([key, bucket]) => {
+    const btn = document.createElement("button");
+    const isActive = key === activeBucket;
+
+    btn.className =
+      "flex-1 px-3 py-2 rounded-full text-xs border transition " +
+      (isActive
+        ? "bg-emerald-600 text-white border-emerald-600"
+        : "bg-white text-gray-700 border-gray-200");
+
+    btn.textContent = bucket.label;
+
+    btn.addEventListener("click", () => {
+      if (activeBucket === key) return;
+      activeBucket = key;
+      // Just re-render timelines; courts grid is same
+      renderAll();
+    });
+
+    timeBucketTabs.appendChild(btn);
+  });
+
+  // Tabs are part of the UI by default; we hide/show via layout in renderCourtsGrid
+}
+
 async function renderAll() {
   selectedDate = dateInput?.value || selectedDate || fmtDateISO(new Date());
 
@@ -577,8 +618,14 @@ async function renderAll() {
   window.__GODsTurf = window.__GODsTurf || {};
   window.__GODsTurf.occupancyMap = occupancy;
 
-  // NO BUCKETS — show all slots together
-  renderTimeChips(ALL_SLOTS, occupancy);
+  // Time-bucket filter
+  const bucket = TIME_BUCKETS[activeBucket] || TIME_BUCKETS.all;
+  const filteredSlots = ALL_SLOTS.filter(
+    s => s.startHour >= bucket.from && s.startHour < bucket.to
+  );
+
+  renderTimeBucketTabs();
+  renderTimeChips(filteredSlots, occupancy);
   renderCourtsGrid(occupancy);
   updateSummaryFromSelection();
 }
@@ -753,22 +800,28 @@ function renderCourtsGrid(occupancy) {
     card.appendChild(btnRow);
 
     if (isSelected && timeChips && durationControl) {
-      const timelineHost = document.createElement('div');
-      timelineHost.className = 'mt-3 space-y-2';
-
-      // Only show the full time grid + duration — no bucket tabs
-      timeChips.classList.remove('hidden');
-      durationControl.classList.remove('hidden');
-
+      const timelineHost = document.createElement("div");
+      timelineHost.className = "mt-3 space-y-2";
+    
+      // Make sure timeline pieces are visible
+      timeChips.classList.remove("hidden");
+      durationControl.classList.remove("hidden");
+      if (timeBucketTabs) timeBucketTabs.classList.remove("hidden");
+    
+      // Order: tabs → grid → duration control
+      if (timeBucketTabs) timelineHost.appendChild(timeBucketTabs);
       timelineHost.appendChild(timeChips);
       timelineHost.appendChild(durationControl);
-
+    
       card.appendChild(timelineHost);
     } else {
-      const helper = document.createElement('div');
-      helper.className = 'mt-2 text-xs text-gray-500';
-      helper.textContent = 'Select this court to view available time slots.';
+      const helper = document.createElement("div");
+      helper.className = "mt-2 text-xs text-gray-500";
+      helper.textContent = "Select this court to view available time slots.";
       card.appendChild(helper);
+    
+      // Hide timeline pieces when this court is not selected
+      if (timeBucketTabs) timeBucketTabs.classList.add("hidden");
     }
 
     courtsGrid.appendChild(card);
