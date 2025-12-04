@@ -741,7 +741,7 @@ function renderTimeChips(slots, occupancy) {
       timelineSelection = newSelection;
 
       normalizeSelectionToContiguous();
-      renderTimeChips(ALL_SLOTS, occupancy);
+      renderTimeChips(slotsList, occupancy);
       updateSummaryFromSelection();
     });
 
