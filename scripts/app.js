@@ -431,7 +431,7 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
     });
   }
   const addr = $("#addr");
-  if (addr) addr.textContent = "Near City Sports Complex, New Town, Kolkata 700156";
+  if (addr) addr.textContent = "GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150";
   const emailLink = $("#emailLink");
   if (emailLink) { emailLink.href = "mailto:godsturf@gmail.com"; emailLink.textContent = "godsturf@gmail.com"; }
 })();
