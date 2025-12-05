@@ -151,18 +151,21 @@
           </div>
         </div>
 
+        <!-- Desktop contact card (anchor target for #contact) -->
         <div class="p-3 md:p-4 border rounded-2xl bg-white" id="contact">
           <h3 class="font-semibold">Contact</h3>
-          <p class="text-sm mt-2"><span id="addr">GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150</span></p>
+          <p class="text-sm mt-2">
+            <span id="addr">GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150</span>
+          </p>
           <div class="mt-3 space-y-2 text-sm">
             <a id="emailLink" class="block underline" href="mailto:godsturf@gmail.com">godsturf@gmail.com</a>
             <a id="callLink" class="block underline" href="tel:+917003396909">Call +91-70033-96909</a>
           </div>
         </div>
 
-        <div class="p-3 md:p-4 border rounded-2xl bg-white" id="contact">
+        <!-- Desktop location card -->
+        <div class="p-3 md:p-4 border rounded-2xl bg-white" id="location">
           <h3 class="font-semibold">Location</h3>
-        
           <div class="mt-3 border rounded-xl overflow-hidden">
             <div class="relative w-full h-48">
               <iframe
@@ -173,16 +176,50 @@
                 referrerpolicy="no-referrer-when-downgrade">
               </iframe>
             </div>
-          
             <div class="p-2 text-sm">
               <div class="font-medium">God's Turf</div>
               <div class="text-xs mt-1 text-gray-600">
                 GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150
               </div>
             </div>
-          </div>  
-          
+          </div>
+        </div>
       </aside>
+    </div>
+
+    <!-- Mobile Contact + Location (shown only below md) -->
+    <div class="md:hidden mt-4 space-y-4" id="contact-mobile">
+      <div class="p-3 border rounded-2xl bg-white">
+        <h3 class="font-semibold">Contact</h3>
+        <p class="text-sm mt-2">
+          GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150
+        </p>
+        <div class="mt-3 space-y-2 text-sm">
+          <a class="block underline" href="mailto:godsturf@gmail.com">godsturf@gmail.com</a>
+          <a class="block underline" href="tel:+917003396909">Call +91-70033-96909</a>
+        </div>
+      </div>
+
+      <div class="p-3 border rounded-2xl bg-white">
+        <h3 class="font-semibold">Location</h3>
+        <div class="mt-3 border rounded-xl overflow-hidden">
+          <div class="relative w-full h-48">
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3685.8144715119993!2d88.41579447590148!3d22.511143035218787!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3a0273004ad50299%3A0x5261b37ef6bf36e1!2sGod&#39;s%20turf!5e0!3m2!1sen!2sin!4v1764914883453!5m2!1sen!2sin"
+              class="w-full h-full border-0"
+              allowfullscreen=""
+              loading="lazy"
+              referrerpolicy="no-referrer-when-downgrade">
+            </iframe>
+          </div>
+          <div class="p-2 text-sm">
+            <div class="font-medium">God's Turf</div>
+            <div class="text-xs mt-1 text-gray-600">
+              GC69+F85, Anandapur Rd, Mundapara, Kolkata, Karimpur, West Bengal 700150
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -206,20 +243,20 @@
   <section id="gallery" class="max-w-6xl mx-auto px-4 py-10">
     <div class="p-4 border rounded-2xl bg-white">
       <h3 class="font-semibold mb-4 text-lg">Gallery</h3>
-  
+
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         <img src="./assets/turf_left.jpg" class="rounded-xl object-cover w-full h-32 sm:h-40" alt="Turf photo">
         <img src="./assets/turf_video_thumbnail.jpg" class="rounded-xl object-cover w-full h-32 sm:h-40" alt="Turf photo">
         <img src="./assets/turf_night.jpg" class="rounded-xl object-cover w-full h-32 sm:h-40" alt="Night turf">
         <img src="./assets/players.jpg" class="rounded-xl object-cover w-full h-32 sm:h-40" alt="Players on turf">
-  
+
         <!-- Add more images easily -->
       </div>
-  
+
       <p class="text-xs text-gray-500 mt-3">More pictures coming soon.</p>
     </div>
   </section>
-  
+
   <section id="rules" class="max-w-6xl mx-auto px-4 pb-24 md:pb-8">
     <div class="p-4 border rounded-2xl bg-white">
       <h3 class="font-semibold mb-2">Rules</h3>
