@@ -23,6 +23,24 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const db = getFirestore(app);
 
+/* ---------- DateTime helpers (NEW) ---------- */
+function buildDateTime(dateISO, hhmm) {
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const [hh, mm] = hhmm.split(":").map(Number);
+  return new Date(y, m - 1, d, hh, mm, 0, 0);
+}
+
+function addMinutes(dt, mins) {
+  return new Date(dt.getTime() + mins * 60000);
+}
+
+function formatDateTime(dt) {
+  return dt.toLocaleString("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
 /* ---------- tiny helpers ---------- */
 const $ = (sel, el = document) => (el || document).querySelector(sel);
 const $$ = (sel, el = document) => Array.from((el || document).querySelectorAll(sel));
@@ -286,9 +304,10 @@ function isRangeAvailableFor(occupancyMap, startSlotId, durationMins, targetCour
 
   for (let offset = 0; offset < slotsNeeded; offset++) {
     const slot = ALL_SLOTS[startIdx + offset];
-    if (!slot) {
-      return { allowed: false, reason: "Not enough time left in the day." };
-    }
+      if (!slot) {
+        // Slot spills into next day — allowed at logic level
+        continue;
+      }
 
     const sid = slot.id;
     const occ = (occupancyMap && occupancyMap[sid]) || {
@@ -437,20 +456,34 @@ if (dateInput && !dateInput.value) dateInput.value = fmtDateISO(new Date());
 })();
 
 /* ---------- Firestore helpers ---------- */
-async function fetchBookingsForDate(dateISO) {
+async function fetchBookingsForDateAndNext(dateISO) {
   if (!dateISO) return [];
+
+  const d = new Date(dateISO);
+  const next = new Date(d);
+  next.setDate(d.getDate() + 1);
+
+  const todayISO = fmtDateISO(d);
+  const nextISO  = fmtDateISO(next);
+
   try {
-    const q = query(collection(db, "bookings"), where("date", "==", dateISO));
-    const snap = await getDocs(q);
+    const q1 = query(collection(db, "bookings"), where("date", "==", todayISO));
+    const q2 = query(collection(db, "bookings"), where("date", "==", nextISO));
+
+    const [s1, s2] = await Promise.all([getDocs(q1), getDocs(q2)]);
     const docs = [];
-    snap.forEach(d => { const data = d.data(); data._id = d.id; docs.push(data); });
+
+    s1.forEach(d => docs.push({ ...d.data(), _id: d.id }));
+    s2.forEach(d => docs.push({ ...d.data(), _id: d.id }));
+
     return docs;
   } catch (err) {
-    console.error("fetchBookingsForDate err", err);
-    toast("Firestore error: " + (err?.message || err), { error: true, duration: 8000 });
+    console.error(err);
+    toast("Error loading bookings", { error: true });
     return [];
   }
 }
+
 async function fetchWishlistsFor(dateISO, courtId) {
   if (!dateISO || !courtId) return [];
   try {
@@ -634,7 +667,7 @@ async function renderAll() {
   let bookingsAll = [], wishlists = [];
   try {
     [bookingsAll, wishlists] = await Promise.all([
-      fetchBookingsForDate(selectedDate),
+      fetchBookingsForDateAndNext(selectedDate),
       fetchWishlistsFor(selectedDate, selectedCourt)
     ]);
   } catch (e) {
@@ -1016,8 +1049,11 @@ function updateSummaryFromSelection() {
   const startSlot = ALL_SLOTS[min];
   const startTime = startSlot.id.split('-')[0];
 
-  const rangeId = makeRangeIdFromStartAndDuration(startSlot.id, selectedDurationMins);
-  const [_, endTime] = rangeId.split('-');
+  const startDT = buildDateTime(selectedDate, startTime);
+  const endDT   = addMinutes(startDT, selectedDurationMins);
+  
+  summaryStart.textContent = formatDateTime(startDT);
+  summaryEnd.textContent   = formatDateTime(endDT);
 
   if (summaryStart) summaryStart.textContent = to12FromHHMM(startTime);
   if (summaryEnd) summaryEnd.textContent = to12FromHHMM(endTime);
@@ -1158,7 +1194,10 @@ mConfirm?.addEventListener("click", async () => {
     }
 
     const amountToSave = Math.round((selectedAmount || 0) * (durationMins / 60));
-
+    
+    const startDT = buildDateTime(selectedDate, startSlotId.split("-")[0]);
+    const endDT   = addMinutes(startDT, durationMins);
+    
     const booking = {
       userName: name,
       phone,
@@ -1168,6 +1207,8 @@ mConfirm?.addEventListener("click", async () => {
       slotId: rangeId,
       slotLabel: to12HourLabel(rangeId),
       date: selectedDate,
+      startDateTime: startDT.toISOString(),
+      endDateTime: endDT.toISOString(),
       amount: amountToSave,
       durationMins,
       status: "pending",
@@ -1181,7 +1222,7 @@ mConfirm?.addEventListener("click", async () => {
       if (cwhen) cwhen.textContent = `${selectedDate} · ${booking.slotLabel}`;
       if (ccourt) ccourt.textContent = metaFor(normCourt).label;
       if (camount) camount.textContent = `₹${booking.amount}`;
-      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked ${booking.slotLabel} on ${selectedDate} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
+      const waMsg = encodeURIComponent(`Hi GODs Turf — I booked from ${formatDateTime(startDT)} to ${formatDateTime(endDT)} (Booking ID: ${ref.id}). Name: ${name}, Phone: ${phone}.`);
       if (confirmWA) confirmWA.href = `https://wa.me/+917003396909?text=${waMsg}`;
 
       show(confirmCard);
